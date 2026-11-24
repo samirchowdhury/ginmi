@@ -79,7 +79,7 @@ Threads run in parallel, each in its own agent session, so questions are answere
 ### Read-only enforcement
 
 Threads keep the same tool definitions as every other thread.
-Removing tools would change the cached prefix and lose prompt-cache reuse.
+Removing tools changes the provider request and loses prompt-cache reuse entirely (verified: `--tools read,bash` dropped cache reads from 7,401 tokens to 0).
 Instead, a hook rejects `edit`/`write` calls and `bash` commands that write to the workspace or clone, at run time.
 The read-only rule is stated in the pack instructions, not per thread.
 
@@ -107,6 +107,20 @@ send(thread, message) -> stream of events
 ```
 
 First implementation: pi in RPC mode (`pi --mode rpc`), one subprocess per thread.
+
+### Seeding a pi thread
+
+Verified against pi 1.4.0 with `github-copilot` / `claude-opus-5.5`:
+
+- The pack goes in the system prompt via `--append-system-prompt <workspace>/ginmi/pack.md`.
+- Summaries go in a seeded session file as `custom_message` entries, opened with `--session <file>`.
+  Pi loads them into context without an LLM call.
+- The session file must start with a `system` message entry, then the summaries.
+  Otherwise pi appends its system message after the summaries, the prefix differs between threads, and only about 1,200 tokens (the tool definitions) are cached.
+- With the system message first, a second thread read 7,401 tokens from cache and wrote 149, costing about 13× less than an uncached start.
+- ginmi gets the system message once by running a warm-up request against an empty session with the same flags, which also warms the cache.
+  If a pi upgrade changes the system prompt, pi appends a patch system message, costing one cache miss rather than breaking.
+- Use `--no-extensions --no-skills --no-context-files --no-prompt-templates` (plus `-e` for ginmi's read-only hook) so the prefix doesn't depend on the user's pi setup.
 Other candidates later: Claude Code (`claude -p --resume <id> --fork-session`), Codex (`codex exec resume`), or a small built-in agent loop over a provider API.
 
 ## Page
@@ -170,9 +184,7 @@ Later: per-item reading time and detail expansion, source-link clicks, diagram i
 
 - Server stack: TypeScript/Node is the likely default (mermaid.js, pi's RPC client).
 - Precise rules for which `bash` commands count as writes.
-- Whether pi RPC can start a thread from a pack without an existing session, or needs a seeded session file.
 - How to handle diffs too large for the pack.
-- Whether removing tools actually changes pi's provider request (verify before relying on the hook approach being necessary).
 
 ## First milestone
 
