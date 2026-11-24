@@ -3,5 +3,26 @@
 ginmi (吟味, "careful scrutiny before accepting something") is a browser UI for reading code reviews and asking clarifying questions about them.
 You select a sentence or a diagram node, ask a question, and get an immediate answer in a thread anchored to that spot.
 
-Status: design only.
-See [DESIGN.md](DESIGN.md).
+## Install
+
+```sh
+cd ~/ginmi && npm install && npm link
+```
+
+Requires macOS (threads run under `sandbox-exec`), Node 20+, and [pi](https://pi.dev) on `PATH`.
+
+## Use
+
+A review workspace is a directory containing `review.json` (see [DESIGN.md](DESIGN.md#manifest)); the `eng-governance-review` skill writes one.
+
+```sh
+ginmi open <workspace>    # prepare the clone and context pack, start the server, print the URL
+ginmi stop                # stop the background server
+```
+
+The server listens on `127.0.0.1:7477` (`GINMI_PORT` to change) and logs to `~/.local/share/ginmi/server.log`.
+Set `GINMI_MODEL` to choose the pi model for answers; otherwise pi's default is used.
+Opening a workspace for the first time makes one warm-up request to pi, which also warms the prompt cache.
+Telemetry is local: `<workspace>/ginmi/events.jsonl`, copied to `~/.local/share/ginmi/events/`.
+
+See [DESIGN.md](DESIGN.md) for the design.

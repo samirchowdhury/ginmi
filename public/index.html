@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ginmi</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/vendor/markdown-it.js"></script>
+  <script src="/vendor/mermaid.js"></script>
+  <script src="/vendor/svg-pan-zoom.js"></script>
+</head>
+<body>
+  <header id="topbar">
+    <span class="brand">吟味 ginmi</span>
+    <a id="mr-link" target="_blank" rel="noopener"></a>
+    <span id="progress"></span>
+    <span id="base-status"></span>
+    <button id="ask-general" type="button">Ask about the whole review</button>
+  </header>
+  <div id="layout">
+    <main id="review"></main>
+    <aside id="threads">
+      <p id="threads-empty" class="hint">Select any text in the review, or click a diagram node, to ask a question.</p>
+    </aside>
+  </div>
+  <button id="ask-button" type="button" hidden>Ask</button>
+  <form id="ask-form" hidden>
+    <div id="ask-anchor"></div>
+    <textarea id="ask-text" rows="3" placeholder="What would you like clarified? (⌘↵ to send)"></textarea>
+    <div class="row">
+      <button type="submit">Ask</button>
+      <button type="button" id="ask-cancel">Cancel</button>
+    </div>
+  </form>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "ginmi",
+  "version": "0.1.0",
+  "description": "Browser UI for reading code reviews and asking anchored clarifying questions.",
+  "type": "module",
+  "bin": { "ginmi": "bin/ginmi.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.4.0",
+    "svg-pan-zoom": "^3.6.2"
+  }
+}
