@@ -127,7 +127,7 @@ const mermaidNodeId = (node) => node.id.match(/flowchart-(.+)-\d+$/)?.[1] ?? nod
 async function renderDiagrams() {
   const nodes = [...document.querySelectorAll("pre.mermaid")];
   if (!nodes.length) return;
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
   await mermaid.run({ nodes });
   document.querySelectorAll(".mermaid-wrap").forEach((wrap, i) => {
     const svg = wrap.querySelector("svg");
