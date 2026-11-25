@@ -175,18 +175,18 @@ function decisionBar(item) {
   for (const [value, label] of [["useful", "Useful"], ["unclear", "Unclear"], ["wrong", "Wrong"], ["noise", "Noise"]]) {
     bar.append(el("button", { type: "button", "data-field": "rating", "data-value": value, onclick: choose("rating", value) }, label));
   }
-  const note = el("input", { placeholder: "Note for your follow-up with the agent (Enter to save)", title: "Saved with your decision in decisions.json; the review agent reads it when you discuss items. Not sent to question threads." });
-  const saved = el("span", { class: "saved" });
-  const saveNote = async () => {
-    if (note.value === (state.decisions[item]?.note ?? "")) return;
-    state.decisions[item] = await post("decisions", { item, patch: { note: note.value, ms_since_open: Date.now() - openedAt } });
-    saved.textContent = note.value ? "Saved ✓" : "Cleared";
-    clearTimeout(saved.timer);
-    saved.timer = setTimeout(() => (saved.textContent = ""), 2500);
-  };
-  note.addEventListener("keydown", (e) => e.key === "Enter" && note.blur());
-  note.addEventListener("blur", saveNote);
-  bar.append(note, saved);
+  const note = el("input", { placeholder: "Note (optional)" });
+  note.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !note.value.trim()) return;
+    const notes = [...notesOf(item), { id: crypto.randomUUID().slice(0, 8), text: note.value.trim(), created: new Date().toISOString() }];
+    note.value = "";
+    await saveNotes(item, notes);
+    const toggle = $("#notes-toggle");
+    toggle.classList.remove("flash");
+    void toggle.offsetWidth;
+    toggle.classList.add("flash");
+  });
+  bar.append(note);
   return bar;
 }
 
@@ -194,14 +194,78 @@ function applyDecisions() {
   for (const bar of document.querySelectorAll(".decision")) {
     const d = state.decisions[bar.dataset.item] ?? {};
     for (const b of bar.querySelectorAll("button")) b.classList.toggle("on", d[b.dataset.field] === b.dataset.value);
-    const note = bar.querySelector("input");
-    if (document.activeElement !== note) note.value = d.note ?? "";
     const section = items.get(bar.dataset.item);
     for (const v of ["accept", "dismiss", "defer"]) section?.classList.toggle(`decided-${v}`, d.decision === v);
   }
   const decided = [...items.keys()].filter((i) => state.decisions[i]?.decision).length;
   $("#progress").textContent = items.size ? `${decided}/${items.size} decided` : "";
+  renderNotes();
 }
+
+// ---------- Notes ----------
+
+// Notes are a list per item; older reviews stored a single "note" string.
+const notesOf = (item) => {
+  const d = state.decisions[item] ?? {};
+  return d.notes ?? (d.note ? [{ id: "legacy", text: d.note, created: d.updated }] : []);
+};
+
+async function saveNotes(item, notes) {
+  state.decisions[item] = await post("decisions", { item, patch: { notes, note: null, ms_since_open: Date.now() - openedAt } });
+  renderNotes();
+}
+
+function renderNotes() {
+  const all = [...new Set([...items.keys(), ...Object.keys(state.decisions)])].filter((i) => notesOf(i).length);
+  const count = all.reduce((n, i) => n + notesOf(i).length, 0);
+  $("#notes-toggle").textContent = `Notes (${count})`;
+  const panel = $("#notes-panel");
+  panel.replaceChildren();
+  if (!count) panel.append(el("p", { class: "hint" }, "No notes yet. Type in an item's Note field and press Enter."));
+  for (const item of all) {
+    const title = items.get(item)?.dataset.title ?? "";
+    panel.append(
+      el("div", { class: "notes-item", onclick: () => items.get(item)?.scrollIntoView({ behavior: "smooth", block: "start" }) }, `Item ${item}`, el("span", { class: "hint" }, ` ${title}`)),
+    );
+    for (const n of notesOf(item)) panel.append(noteRow(item, n));
+  }
+}
+
+function noteRow(item, n) {
+  const row = el("div", { class: "note-row" });
+  const view = () => {
+    row.replaceChildren(
+      el("span", { class: "note-text" }, n.text),
+      el("button", { type: "button", onclick: edit }, "Edit"),
+      el("button", { type: "button", onclick: () => saveNotes(item, notesOf(item).filter((x) => x.id !== n.id)) }, "Delete"),
+    );
+  };
+  const edit = () => {
+    const input = el("input", { value: n.text });
+    const save = () => {
+      const text = input.value.trim();
+      saveNotes(item, notesOf(item).map((x) => (x.id === n.id ? { ...x, text } : x)).filter((x) => x.text));
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") save();
+      if (e.key === "Escape") view();
+    });
+    row.replaceChildren(input, el("button", { type: "button", onclick: save }, "Save"), el("button", { type: "button", onclick: view }, "Cancel"));
+    input.focus();
+  };
+  view();
+  return row;
+}
+
+$("#notes-toggle").addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("#notes-panel").hidden = !$("#notes-panel").hidden;
+});
+document.addEventListener("click", (e) => {
+  // composedPath() is captured at dispatch, so it still works when a handler replaced the clicked element.
+  if (!e.composedPath().some((n) => n.id === "notes-wrap")) $("#notes-panel").hidden = true;
+});
+document.addEventListener("keydown", (e) => e.key === "Escape" && ($("#notes-panel").hidden = true));
 
 // ---------- Anchors and highlights ----------
 
