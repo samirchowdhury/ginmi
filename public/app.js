@@ -175,11 +175,18 @@ function decisionBar(item) {
   for (const [value, label] of [["useful", "Useful"], ["unclear", "Unclear"], ["wrong", "Wrong"], ["noise", "Noise"]]) {
     bar.append(el("button", { type: "button", "data-field": "rating", "data-value": value, onclick: choose("rating", value) }, label));
   }
-  const note = el("input", { placeholder: "Note (optional)" });
-  note.addEventListener("change", async () => {
+  const note = el("input", { placeholder: "Note for your follow-up with the agent (Enter to save)", title: "Saved with your decision in decisions.json; the review agent reads it when you discuss items. Not sent to question threads." });
+  const saved = el("span", { class: "saved" });
+  const saveNote = async () => {
+    if (note.value === (state.decisions[item]?.note ?? "")) return;
     state.decisions[item] = await post("decisions", { item, patch: { note: note.value, ms_since_open: Date.now() - openedAt } });
-  });
-  bar.append(note);
+    saved.textContent = note.value ? "Saved ✓" : "Cleared";
+    clearTimeout(saved.timer);
+    saved.timer = setTimeout(() => (saved.textContent = ""), 2500);
+  };
+  note.addEventListener("keydown", (e) => e.key === "Enter" && note.blur());
+  note.addEventListener("blur", saveNote);
+  bar.append(note, saved);
   return bar;
 }
 

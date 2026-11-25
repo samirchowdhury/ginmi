@@ -101,3 +101,4 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 #svg-pan-zoom-controls path { fill: var(--muted); }
 .thread code { background: var(--code); }
 .thread pre { background: var(--bg); }
+.decision .saved { color: var(--ok); font-size: 0.9em; min-width: 4.5em; }
