@@ -465,6 +465,43 @@ function setBaseStatus(base) {
   s.textContent = base.status === "warming" ? "Warming up the agent…" : base.status === "error" ? `Agent error: ${base.error}` : "";
 }
 
+// ---------- Resizable thread column ----------
+
+const DEFAULT_THREADS_WIDTH = 440;
+const setThreadsWidth = (px) => {
+  const width = Math.round(Math.min(Math.max(px, 280), window.innerWidth - 400));
+  document.documentElement.style.setProperty("--threads-width", `${width}px`);
+  return width;
+};
+const savedWidth = Number(localStorage.getItem("ginmi.threadsWidth"));
+if (savedWidth) setThreadsWidth(savedWidth);
+
+const resizer = $("#resizer");
+// Pointer capture suppresses dblclick, so detect a double press ourselves; it resets the width.
+let lastPress = 0;
+resizer.addEventListener("pointerdown", (e) => {
+  if (e.timeStamp - lastPress < 400) {
+    localStorage.removeItem("ginmi.threadsWidth");
+    setThreadsWidth(DEFAULT_THREADS_WIDTH);
+    lastPress = 0;
+    return;
+  }
+  lastPress = e.timeStamp;
+  resizer.setPointerCapture(e.pointerId);
+  document.body.classList.add("resizing");
+});
+resizer.addEventListener("pointermove", (e) => {
+  if (resizer.hasPointerCapture(e.pointerId)) setThreadsWidth(window.innerWidth - e.clientX - 3);
+});
+resizer.addEventListener("pointerup", (e) => {
+  if (!resizer.hasPointerCapture(e.pointerId)) return;
+  resizer.releasePointerCapture(e.pointerId);
+  document.body.classList.remove("resizing");
+  const width = setThreadsWidth(window.innerWidth - e.clientX - 3);
+  localStorage.setItem("ginmi.threadsWidth", String(width));
+  telemetry("threads_resize", { width });
+});
+
 // ---------- Startup ----------
 
 async function main() {
