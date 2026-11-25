@@ -27,9 +27,10 @@ let state;
 const threads = new Map(); // id -> thread view
 const items = new Map(); // item id -> section element
 let activeThread = null;
-// "inline": threads open under the passage they anchor to; "side": all threads in the right column.
+// "inline": a thread opens in a popover beside the passage it anchors to; "side": all threads in the right column.
 let mode = localStorage.getItem("ginmi.threadMode") ?? "inline";
-const openThreads = new Set(); // inline mode: threads whose cards are shown
+let openGroup = []; // inline mode: ids of the threads shown in the popover (all anchored to one passage)
+let openAnchorEl = null; // element the popover lines up with
 
 // ---------- Markdown ----------
 
@@ -193,7 +194,7 @@ function applyDecisions() {
 // Find quote inside root, ignoring whitespace differences between the selection and the DOM text.
 function findRange(root, quote) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement.closest(".decision, .badge, .bubble, .inline-cards, svg, .mermaid-wrap") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    acceptNode: (n) => (n.parentElement.closest(".decision, .badge, .bubble, svg, .mermaid-wrap") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   let norm = "";
   const map = [];
@@ -265,14 +266,16 @@ function focusItemThreads(item) {
   const ofItem = [...threads.values()].filter((t) => t.anchor.item === item);
   if (!ofItem.length) return;
   if (mode === "inline") {
-    for (const t of ofItem) openThreads.add(t.id);
+    const block = anchorBlock(ofItem[0]);
+    const details = block?.closest("details");
+    if (details) details.open = true;
+    openGroup = [ofItem[0].id];
     layoutThreads();
+    openAnchorEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
   }
   setActive(ofItem[0].id, false);
-  const card = document.querySelector(`.thread[data-thread="${ofItem[0].id}"]`);
-  const details = card?.closest("details");
-  if (details) details.open = true;
-  card?.scrollIntoView({ behavior: "smooth", block: mode === "inline" ? "center" : "start" });
+  document.querySelector(`.thread[data-thread="${ofItem[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------- Thread placement ----------
@@ -289,17 +292,34 @@ function anchorBlock(t) {
 const createdOrder = (a, b) => itemOrder(a.anchor.item) - itemOrder(b.anchor.item) || String(a.anchor.created).localeCompare(String(b.anchor.created));
 
 function toggleThreads(ids) {
-  const open = ids.some((tid) => openThreads.has(tid));
-  for (const tid of ids) open ? openThreads.delete(tid) : openThreads.add(tid);
+  const open = ids.some((tid) => openGroup.includes(tid));
+  openGroup = open ? [] : ids;
   telemetry("inline_toggle", { threads: ids, open: !open });
   layoutThreads();
 }
 
+// Line the popover up with its passage, in the space right of the review column.
+function positionPopover() {
+  const pop = $("#margin-pop");
+  if (pop.hidden || !openAnchorEl) return;
+  const review = $("#review").getBoundingClientRect();
+  const anchor = openAnchorEl.getBoundingClientRect();
+  const width = Math.max(360, Math.min(640, window.innerWidth - review.right - 32));
+  const left = Math.min(review.right + 16, window.innerWidth - width - 16);
+  pop.style.width = `${width}px`;
+  pop.style.left = `${left + window.scrollX}px`;
+  pop.style.top = `${Math.max(anchor.top, 56) + window.scrollY}px`;
+}
+window.addEventListener("resize", positionPopover);
+document.addEventListener("toggle", positionPopover, true);
+
 // Rebuild where thread cards live for the current mode.
 function layoutThreads() {
   document.body.classList.toggle("inline-mode", mode === "inline");
-  $("#mode-toggle").textContent = mode === "inline" ? "Threads: inline" : "Threads: side";
-  document.querySelectorAll(".bubble, .inline-cards, .inline-cards-wrap, .inline-general, #threads .thread").forEach((e) => e.remove());
+  $("#mode-toggle").textContent = mode === "inline" ? "Threads: beside text" : "Threads: column";
+  document.querySelectorAll(".bubble, .inline-general, .bubble-wrap, #threads .thread, #margin-pop .thread").forEach((e) => e.remove());
+  $("#margin-pop").hidden = true;
+  openAnchorEl = null;
   const sorted = [...threads.values()].sort(createdOrder);
   $("#threads-empty").hidden = threads.size > 0;
   if (mode === "side") return sorted.forEach(renderThread);
@@ -311,31 +331,35 @@ function layoutThreads() {
   }
   for (const [block, group] of groups) {
     const ids = group.map((t) => t.id);
-    const open = ids.some((tid) => openThreads.has(tid));
+    const open = ids.some((tid) => openGroup.includes(tid));
     const bubble = el(
       "button",
       { type: "button", class: `bubble${open ? " open" : ""}`, title: open ? "Hide thread" : "Show thread", onclick: (e) => (e.stopPropagation(), toggleThreads(ids)) },
       `💬 ${group.length}`,
     );
-    const cards = el("div", { class: "inline-cards", "data-threads": ids.join(" ") });
+    let anchorEl = block;
     if (!block) {
-      const general = el("div", { class: "inline-general" }, el("span", { class: "hint" }, "Questions about the whole review "), bubble, cards);
+      anchorEl = el("div", { class: "inline-general" }, el("span", { class: "hint" }, "Questions about the whole review "), bubble);
       const firstH2 = $("#review h2");
-      firstH2 ? firstH2.before(general) : $("#review").append(general);
+      firstH2 ? firstH2.before(anchorEl) : $("#review").append(anchorEl);
     } else if (block.classList.contains("mermaid-wrap")) {
-      block.after(el("div", { class: "inline-cards-wrap" }, bubble, cards));
-    } else {
-      block.append(bubble);
-      block.tagName === "LI" ? block.append(cards) : block.after(cards);
+      block.after(el("div", { class: "bubble-wrap" }, bubble));
+    } else block.append(bubble);
+    if (open) {
+      openGroup = ids;
+      openAnchorEl = anchorEl;
+      $("#margin-pop").hidden = false;
+      for (const t of group) renderThread(t);
     }
-    for (const t of group) if (openThreads.has(t.id)) renderThread(t);
   }
-  refreshHighlights();
+  if (!openAnchorEl) openGroup = [];
+  setActive(openGroup[0] ?? null, false);
+  positionPopover();
 }
 
 function placeCard(t, card) {
   if (mode === "inline") {
-    if (openThreads.has(t.id)) document.querySelector(`.inline-cards[data-threads~="${t.id}"]`)?.append(card);
+    if (openGroup.includes(t.id)) $("#margin-pop .pop-cards").append(card);
     return;
   }
   const panel = $("#threads");
@@ -345,6 +369,14 @@ function placeCard(t, card) {
   });
   panel.insertBefore(card, after ?? null);
 }
+
+$("#pop-close").addEventListener("click", () => {
+  openGroup = [];
+  layoutThreads();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#margin-pop").hidden && !e.target.closest("textarea, input")) $("#pop-close").click();
+});
 
 $("#mode-toggle").addEventListener("click", () => {
   mode = mode === "inline" ? "side" : "inline";
@@ -526,7 +558,7 @@ function onEvent(ev) {
   if (ev.type === "base_status") return setBaseStatus(ev);
   if (ev.type === "thread_created") {
     threads.set(ev.thread.id, ev.thread);
-    openThreads.add(ev.thread.id);
+    if (mode === "inline") openGroup = [ev.thread.id];
     refreshHighlights();
     layoutThreads();
     return;
