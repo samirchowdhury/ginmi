@@ -27,6 +27,9 @@ let state;
 const threads = new Map(); // id -> thread view
 const items = new Map(); // item id -> section element
 let activeThread = null;
+// "inline": threads open under the passage they anchor to; "side": all threads in the right column.
+let mode = localStorage.getItem("ginmi.threadMode") ?? "inline";
+const openThreads = new Set(); // inline mode: threads whose cards are shown
 
 // ---------- Markdown ----------
 
@@ -190,7 +193,7 @@ function applyDecisions() {
 // Find quote inside root, ignoring whitespace differences between the selection and the DOM text.
 function findRange(root, quote) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement.closest(".decision, .badge, svg, .mermaid-wrap") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    acceptNode: (n) => (n.parentElement.closest(".decision, .badge, .bubble, .inline-cards, svg, .mermaid-wrap") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   let norm = "";
   const map = [];
@@ -259,11 +262,111 @@ function setActive(tid, scroll) {
 }
 
 function focusItemThreads(item) {
-  const first = [...threads.values()].find((t) => t.anchor.item === item);
-  if (!first) return;
-  setActive(first.id, false);
-  document.querySelector(`.thread[data-thread="${first.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const ofItem = [...threads.values()].filter((t) => t.anchor.item === item);
+  if (!ofItem.length) return;
+  if (mode === "inline") {
+    for (const t of ofItem) openThreads.add(t.id);
+    layoutThreads();
+  }
+  setActive(ofItem[0].id, false);
+  const card = document.querySelector(`.thread[data-thread="${ofItem[0].id}"]`);
+  const details = card?.closest("details");
+  if (details) details.open = true;
+  card?.scrollIntoView({ behavior: "smooth", block: mode === "inline" ? "center" : "start" });
 }
+
+// ---------- Thread placement ----------
+
+// The block element a thread belongs under: the paragraph or list item holding its quote, or its diagram.
+function anchorBlock(t) {
+  if (t.anchor.kind === "general") return null;
+  if (t.anchor.kind === "diagram") return document.querySelectorAll(".mermaid-wrap")[t.anchor.diagram] ?? items.get(t.anchor.item)?.querySelector("h3");
+  const range = anchorRange(t);
+  const start = range && (range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer);
+  return start?.closest("li, p, h1, h2, h3, h4, pre, blockquote, td, th") ?? items.get(t.anchor.item)?.querySelector("h3") ?? null;
+}
+
+const createdOrder = (a, b) => itemOrder(a.anchor.item) - itemOrder(b.anchor.item) || String(a.anchor.created).localeCompare(String(b.anchor.created));
+
+function toggleThreads(ids) {
+  const open = ids.some((tid) => openThreads.has(tid));
+  for (const tid of ids) open ? openThreads.delete(tid) : openThreads.add(tid);
+  telemetry("inline_toggle", { threads: ids, open: !open });
+  layoutThreads();
+}
+
+// Rebuild where thread cards live for the current mode.
+function layoutThreads() {
+  document.body.classList.toggle("inline-mode", mode === "inline");
+  $("#mode-toggle").textContent = mode === "inline" ? "Threads: inline" : "Threads: side";
+  document.querySelectorAll(".bubble, .inline-cards, .inline-cards-wrap, .inline-general, #threads .thread").forEach((e) => e.remove());
+  const sorted = [...threads.values()].sort(createdOrder);
+  $("#threads-empty").hidden = threads.size > 0;
+  if (mode === "side") return sorted.forEach(renderThread);
+
+  const groups = new Map(); // block (or null for general) -> threads
+  for (const t of sorted) {
+    const block = anchorBlock(t);
+    groups.set(block, [...(groups.get(block) ?? []), t]);
+  }
+  for (const [block, group] of groups) {
+    const ids = group.map((t) => t.id);
+    const open = ids.some((tid) => openThreads.has(tid));
+    const bubble = el(
+      "button",
+      { type: "button", class: `bubble${open ? " open" : ""}`, title: open ? "Hide thread" : "Show thread", onclick: (e) => (e.stopPropagation(), toggleThreads(ids)) },
+      `💬 ${group.length}`,
+    );
+    const cards = el("div", { class: "inline-cards", "data-threads": ids.join(" ") });
+    if (!block) {
+      const general = el("div", { class: "inline-general" }, el("span", { class: "hint" }, "Questions about the whole review "), bubble, cards);
+      const firstH2 = $("#review h2");
+      firstH2 ? firstH2.before(general) : $("#review").append(general);
+    } else if (block.classList.contains("mermaid-wrap")) {
+      block.after(el("div", { class: "inline-cards-wrap" }, bubble, cards));
+    } else {
+      block.append(bubble);
+      block.tagName === "LI" ? block.append(cards) : block.after(cards);
+    }
+    for (const t of group) if (openThreads.has(t.id)) renderThread(t);
+  }
+  refreshHighlights();
+}
+
+function placeCard(t, card) {
+  if (mode === "inline") {
+    if (openThreads.has(t.id)) document.querySelector(`.inline-cards[data-threads~="${t.id}"]`)?.append(card);
+    return;
+  }
+  const panel = $("#threads");
+  const after = [...panel.querySelectorAll(".thread")].find((c) => {
+    const o = threads.get(c.dataset.thread);
+    return o && createdOrder(o, t) > 0;
+  });
+  panel.insertBefore(card, after ?? null);
+}
+
+$("#mode-toggle").addEventListener("click", () => {
+  mode = mode === "inline" ? "side" : "inline";
+  localStorage.setItem("ginmi.threadMode", mode);
+  telemetry("thread_mode", { mode });
+  layoutThreads();
+});
+
+// Clicking highlighted text opens its thread (inline) or focuses it (side).
+$("#review").addEventListener("click", (e) => {
+  if (!window.getSelection().isCollapsed || e.target.closest(".thread, .bubble, button, a, .mermaid-wrap, input, textarea")) return;
+  const pos = document.caretPositionFromPoint?.(e.clientX, e.clientY);
+  const caret = pos ? [pos.offsetNode, pos.offset] : (() => { const r = document.caretRangeFromPoint?.(e.clientX, e.clientY); return r && [r.startContainer, r.startOffset]; })();
+  if (!caret) return;
+  const hit = [...threads.values()].find((t) => anchorRange(t)?.isPointInRange(...caret));
+  if (!hit) return;
+  if (mode === "inline") toggleThreads([hit.id]);
+  else {
+    setActive(hit.id, false);
+    document.querySelector(`.thread[data-thread="${hit.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
 
 // ---------- Asking ----------
 
@@ -366,6 +469,7 @@ function renderThread(t) {
   const card = el("div", { class: `thread${collapsed ? " collapsed" : ""}${activeThread === t.id ? " active" : ""}`, "data-thread": t.id });
   const head = el("div", { class: "thread-head", title: where }, el("span", {}, t.anchor.item === "general" ? "General" : `Item ${t.anchor.item}`), el("span", { class: "quote" }, where));
   head.addEventListener("click", () => {
+    if (mode === "inline") return card.classList.toggle("collapsed");
     if (activeThread === t.id) card.classList.toggle("collapsed");
     setActive(t.id, true);
   });
@@ -394,15 +498,7 @@ function renderThread(t) {
   }
   card.append(head, body);
   if (existing) existing.replaceWith(card);
-  else {
-    const panel = $("#threads");
-    const after = [...panel.querySelectorAll(".thread")].find((c) => {
-      const o = threads.get(c.dataset.thread);
-      return o && itemOrder(o.anchor.item) > itemOrder(t.anchor.item);
-    });
-    panel.insertBefore(card, after ?? null);
-  }
-  $("#threads-empty").hidden = threads.size > 0;
+  else placeCard(t, card);
 }
 
 function streamingMessage(t) {
@@ -430,8 +526,9 @@ function onEvent(ev) {
   if (ev.type === "base_status") return setBaseStatus(ev);
   if (ev.type === "thread_created") {
     threads.set(ev.thread.id, ev.thread);
-    renderThread(ev.thread);
+    openThreads.add(ev.thread.id);
     refreshHighlights();
+    layoutThreads();
     return;
   }
   const t = threads.get(ev.thread);
@@ -520,8 +617,8 @@ async function main() {
   setBaseStatus(state.base);
   renderReview();
   for (const t of state.threads) threads.set(t.id, t);
-  [...threads.values()].sort((a, b) => itemOrder(a.anchor.item) - itemOrder(b.anchor.item)).forEach(renderThread);
   refreshHighlights();
+  layoutThreads();
   await renderDiagrams().catch((e) => console.error("mermaid", e));
 
   const events = new EventSource(api("events"));
