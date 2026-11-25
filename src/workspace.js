@@ -69,8 +69,15 @@ function ensureClone(m, p, log) {
       if (!hasCommit(p.clone, sha)) throw new Error(`Commit ${sha} not found after fetching ${refs.join(", ")}`);
     }
   }
-  const current = existsSync(join(p.clone, ".git", "HEAD")) ? git(p.clone, ["rev-parse", "HEAD"]).trim() : "";
-  if (current !== m.head_sha) git(p.clone, ["checkout", "--quiet", "--detach", m.head_sha]);
+  // A --no-checkout clone can already have HEAD at head_sha (when the local repo is on that commit) but an empty index.
+  const current = git(p.clone, ["rev-parse", "HEAD"]).trim();
+  let indexMatchesHead = true;
+  try {
+    git(p.clone, ["diff", "--cached", "--quiet", "HEAD"], { stdio: "ignore" });
+  } catch {
+    indexMatchesHead = false;
+  }
+  if (current !== m.head_sha || !indexMatchesHead) git(p.clone, ["checkout", "--quiet", "--force", "--detach", m.head_sha]);
 }
 
 const readOptional = (ws, rel) => (rel && existsSync(join(ws, rel)) ? readFileSync(join(ws, rel), "utf8") : null);

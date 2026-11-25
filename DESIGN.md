@@ -130,7 +130,7 @@ A normal scrolling page with a fixed template, not per-review generated HTML.
 - Summary block: one line per item, linking to the item.
 - Each item: title, then **Decide**, **Scenario**, and **Fix** lines, with details collapsed below.
 - Source references link to GitLab at the pinned head SHA.
-- Decision buttons per item (yes / no / defer), stored in the workspace.
+- Decision buttons per item (accept / dismiss / defer), stored in the workspace.
 - Threads shown in the margin next to their anchor, with streaming answers.
 - Mermaid diagrams with zoom and pan (`svg-pan-zoom`); clicking a node starts a thread anchored to that node ID and label.
 
@@ -168,7 +168,6 @@ Initial events:
 - Questions with their anchors (the main signal about what the review failed to explain).
 - Answer latency: time to first token and total time.
 - Cache-hit ratio per request.
-- Per-item rating: useful, wrong, unclear, or noise.
 
 Later: per-item reading time and detail expansion, source-link clicks, diagram interactions, end-of-review rating and note, and whether a finding became an MR comment or code change.
 `ginmi report` summarizes across reviews, grouped by skill and tool version.
@@ -193,4 +192,4 @@ Later: per-item reading time and detail expansion, source-link clicks, diagram i
 4. Exchange digests appended for later threads.
 5. Minimal telemetry: questions, anchors, latency, decisions.
 
-Mermaid interaction, GitLab links, ratings, and `ginmi report` come after.
+Mermaid interaction, GitLab links, and `ginmi report` come after.
