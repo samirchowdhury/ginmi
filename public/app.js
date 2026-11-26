@@ -414,11 +414,19 @@ const sendFromPop = () => {
   const text = $("#pop-input").value.trim();
   if (!t || !text || t.status === "running") return;
   $("#pop-input").value = "";
+  autosizeInput();
   sendFollowUp(t, text).then(() => {
     const cards = $("#margin-pop .pop-cards");
     cards.scrollTop = cards.scrollHeight;
   });
 };
+// The reply box grows with its text, up to 40% of the window, then scrolls.
+function autosizeInput() {
+  const input = $("#pop-input");
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight + 2, window.innerHeight * 0.4)}px`;
+}
+$("#pop-input").addEventListener("input", autosizeInput);
 $("#pop-send").addEventListener("click", sendFromPop);
 $("#pop-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendFromPop();
@@ -476,6 +484,7 @@ $("#pop-close").addEventListener("click", () => {
   openGroup = [];
   draft = null;
   $("#pop-input").value = "";
+  autosizeInput();
   layoutThreads();
 });
 document.addEventListener("keydown", (e) => {
@@ -504,6 +513,7 @@ function openDraft(anchor, anchorEl, range = null) {
   openGroup = [];
   draft = { anchor, anchorEl: anchorEl ?? $("#review h1") ?? $("#review"), range };
   $("#pop-input").value = "";
+  autosizeInput();
   layoutThreads();
   bringAnchorUp();
   $("#pop-input").focus({ preventScroll: true });
@@ -529,12 +539,14 @@ async function askDraft() {
   if (!question || !draft) return;
   const { anchor } = draft;
   $("#pop-input").value = "";
+  autosizeInput();
   $("#pop-input").disabled = $("#pop-send").disabled = true;
   window.getSelection().removeAllRanges();
   try {
     await post("threads", { anchor, question });
   } catch (err) {
     $("#pop-input").value = question;
+    autosizeInput();
     $("#pop-input").disabled = $("#pop-send").disabled = false;
     alert(`Could not start thread: ${err.message}`);
   }

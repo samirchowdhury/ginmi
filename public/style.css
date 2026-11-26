@@ -122,3 +122,5 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .path-chip:hover { color: var(--fg); border-color: var(--line); background: var(--code); }
 .path-chip .label { font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--fg); margin-right: 0.4em; }
 .thread.draft .thread-body .hint { margin: 0.6em 0; }
+#pop-input { line-height: 1.45; padding: 0.45em 0.6em; resize: none; overflow-y: auto; min-height: calc(2.9em + 2px); }
+#margin-pop .pop-foot .follow { align-items: flex-end; }
