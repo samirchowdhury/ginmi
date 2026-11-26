@@ -35,6 +35,8 @@ let draft = null; // a question being written: { anchor, anchorEl, range }
 // ---------- Markdown ----------
 
 const md = markdownit({ html: false, linkify: true });
+// User messages keep single line breaks, as typed.
+const mdUser = markdownit({ html: false, linkify: true, breaks: true });
 const defaultFence = md.renderer.rules.fence;
 md.renderer.rules.fence = (tokens, idx, opts, env, self) => {
   const t = tokens[idx];
@@ -585,7 +587,11 @@ const toolLine = (t) => {
 };
 
 function renderMessage(m) {
-  if (m.role === "user") return el("div", { class: "msg user" }, m.text);
+  if (m.role === "user") {
+    const div = el("div", { class: "msg user" });
+    div.innerHTML = mdUser.render(m.text);
+    return div;
+  }
   const div = el("div", { class: "msg assistant" });
   if (m.tools?.length) {
     const n = m.tools.length;
