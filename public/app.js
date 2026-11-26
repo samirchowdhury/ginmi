@@ -271,7 +271,7 @@ function focusItemThreads(item) {
     if (details) details.open = true;
     openGroup = [ofItem[0].id];
     layoutThreads();
-    openAnchorEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    bringAnchorUp();
     return;
   }
   setActive(ofItem[0].id, false);
@@ -296,22 +296,127 @@ function toggleThreads(ids) {
   openGroup = open ? [] : ids;
   telemetry("inline_toggle", { threads: ids, open: !open });
   layoutThreads();
+  if (!open) bringAnchorUp();
 }
 
-// Line the popover up with its passage, in the space right of the review column.
+const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
+const POP_TOP = 56; // below the top bar
+const POP_MARGIN = 16;
+const POP_MIN_HEIGHT = 260;
+
+// The popover is fixed to the viewport: its top follows the passage but stays on screen, and its height
+// is whatever room is left, so it never spills below the window. Default width is a readable line length;
+// a dragged width (and its distance from the window's right edge) is remembered.
 function positionPopover() {
   const pop = $("#margin-pop");
   if (pop.hidden || !openAnchorEl) return;
-  const review = $("#review").getBoundingClientRect();
   const anchor = openAnchorEl.getBoundingClientRect();
-  const width = Math.max(360, Math.min(640, window.innerWidth - review.right - 32));
-  const left = Math.min(review.right + 16, window.innerWidth - width - 16);
+  const top = clamp(anchor.top, POP_TOP, Math.max(POP_TOP, window.innerHeight - POP_MIN_HEIGHT - POP_MARGIN));
+  pop.style.top = `${top}px`;
+  pop.style.maxHeight = `${window.innerHeight - top - POP_MARGIN}px`;
+
+  const saved = JSON.parse(localStorage.getItem("ginmi.popSize") ?? "null");
+  let width, left;
+  if (saved) {
+    width = clamp(saved.width, 320, window.innerWidth - 80);
+    left = window.innerWidth - saved.rightGap - width;
+  } else {
+    const reviewRight = $("#review").getBoundingClientRect().right;
+    const gutter = window.innerWidth - reviewRight;
+    width = clamp(gutter - 3 * POP_MARGIN, 360, 760);
+    left = reviewRight + Math.max(POP_MARGIN, (gutter - width) / 2);
+  }
   pop.style.width = `${width}px`;
-  pop.style.left = `${left + window.scrollX}px`;
-  pop.style.top = `${Math.max(anchor.top, 56) + window.scrollY}px`;
+  pop.style.left = `${clamp(left, POP_MARGIN, window.innerWidth - width - POP_MARGIN)}px`;
 }
-window.addEventListener("resize", positionPopover);
-document.addEventListener("toggle", positionPopover, true);
+let positionQueued = false;
+const queuePosition = () => {
+  if (positionQueued) return;
+  positionQueued = true;
+  requestAnimationFrame(() => {
+    positionQueued = false;
+    positionPopover();
+  });
+};
+window.addEventListener("resize", queuePosition);
+window.addEventListener("scroll", queuePosition, { passive: true });
+document.addEventListener("toggle", queuePosition, true);
+
+// 2: when a thread opens, scroll its passage near the top so the popover gets most of the screen height.
+function bringAnchorUp() {
+  if (!openAnchorEl) return;
+  const top = openAnchorEl.getBoundingClientRect().top;
+  if (top < POP_TOP || top > window.innerHeight * 0.25) window.scrollBy({ top: top - POP_TOP - 16, behavior: "smooth" });
+}
+
+// 6: drag the popover's left edge to resize it; double-press resets to the default width.
+const popResize = $("#margin-pop .pop-resize");
+let popLastPress = 0;
+let popRight = 0;
+popResize.addEventListener("pointerdown", (e) => {
+  if (e.timeStamp - popLastPress < 400) {
+    localStorage.removeItem("ginmi.popSize");
+    popLastPress = 0;
+    return positionPopover();
+  }
+  popLastPress = e.timeStamp;
+  popRight = $("#margin-pop").getBoundingClientRect().right;
+  popResize.setPointerCapture(e.pointerId);
+  document.body.classList.add("resizing");
+});
+popResize.addEventListener("pointermove", (e) => {
+  if (!popResize.hasPointerCapture(e.pointerId)) return;
+  const width = clamp(popRight - e.clientX, 320, window.innerWidth - 80);
+  localStorage.setItem("ginmi.popSize", JSON.stringify({ width, rightGap: window.innerWidth - popRight }));
+  positionPopover();
+});
+popResize.addEventListener("pointerup", (e) => {
+  if (!popResize.hasPointerCapture(e.pointerId)) return;
+  popResize.releasePointerCapture(e.pointerId);
+  document.body.classList.remove("resizing");
+  telemetry("popover_resize", JSON.parse(localStorage.getItem("ginmi.popSize") ?? "{}"));
+});
+
+// 3: the follow-up box is pinned to the popover's bottom and replies to the active thread.
+const popTarget = () => threads.get(openGroup.includes(activeThread) ? activeThread : openGroup.at(-1));
+
+function renderPopFoot() {
+  const t = popTarget();
+  const foot = $("#margin-pop .pop-foot");
+  foot.hidden = !t;
+  if (!t) return;
+  const input = $("#pop-input");
+  input.disabled = t.status === "running";
+  input.placeholder = t.status === "running" ? "Waiting for the answer…" : "Follow up… (⌘↵)";
+  $("#pop-send").disabled = input.disabled;
+  const where = t.anchor.kind === "diagram" ? t.anchor.label : t.anchor.kind === "general" ? "whole review" : `“${t.anchor.quote}”`;
+  $("#pop-replying").textContent = openGroup.length > 1 ? `Replying to ${where}` : "";
+}
+
+async function sendFollowUp(t, text) {
+  t.messages.push({ role: "user", text });
+  t.status = "running";
+  t.error = null;
+  renderThread(t);
+  await post(`threads/${t.id}/messages`, { text }).catch((err) => {
+    t.status = "idle";
+    t.error = err.message;
+    renderThread(t);
+  });
+}
+
+const sendFromPop = () => {
+  const t = popTarget();
+  const text = $("#pop-input").value.trim();
+  if (!t || !text || t.status === "running") return;
+  $("#pop-input").value = "";
+  sendFollowUp(t, text).then(() => {
+    const cards = $("#margin-pop .pop-cards");
+    cards.scrollTop = cards.scrollHeight;
+  });
+};
+$("#pop-send").addEventListener("click", sendFromPop);
+$("#pop-input").addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && sendFromPop());
 
 // Rebuild where thread cards live for the current mode.
 function layoutThreads() {
@@ -353,8 +458,9 @@ function layoutThreads() {
     }
   }
   if (!openAnchorEl) openGroup = [];
-  setActive(openGroup[0] ?? null, false);
+  setActive(openGroup.at(-1) ?? null, false);
   positionPopover();
+  renderPopFoot();
 }
 
 function placeCard(t, card) {
@@ -481,7 +587,12 @@ const toolLine = (t) => {
 function renderMessage(m) {
   if (m.role === "user") return el("div", { class: "msg user" }, m.text);
   const div = el("div", { class: "msg assistant" });
-  if (m.tools?.length) div.append(el("div", { class: "tools" }, ...m.tools.map(toolLine)));
+  if (m.tools?.length) {
+    const n = m.tools.length;
+    const last = m.tools.at(-1);
+    const label = m.streaming ? `${n} tool call${n > 1 ? "s" : ""} · ${last.name} ${last.args?.path ?? last.args?.command ?? ""}` : `${n} tool call${n > 1 ? "s" : ""}`;
+    div.append(el("details", { class: "tools" }, el("summary", {}, label), ...m.tools.map(toolLine)));
+  }
   if (m.text) {
     const body = el("div");
     body.innerHTML = md.render(m.text);
@@ -490,6 +601,26 @@ function renderMessage(m) {
   }
   if (m.error) div.append(el("div", { class: "msg error" }, m.error));
   return div;
+}
+
+// pi makes one tool call per assistant step; fold tool-only steps into the next step that has text.
+function mergeToolSteps(messages) {
+  const out = [];
+  let carried = [];
+  for (const m of messages) {
+    if (m.role === "assistant" && !m.text && !m.error) {
+      carried.push(...(m.tools ?? []));
+      continue;
+    }
+    if (m.role === "assistant") out.push({ ...m, tools: [...carried, ...(m.tools ?? [])] });
+    else {
+      if (carried.length) out.push({ role: "assistant", text: "", tools: carried });
+      out.push(m);
+    }
+    if (m.role === "assistant" || carried.length) carried = [];
+  }
+  if (carried.length) out.push({ role: "assistant", text: "", tools: carried });
+  return out;
 }
 
 const itemOrder = (item) => [...items.keys()].indexOf(item);
@@ -501,36 +632,30 @@ function renderThread(t) {
   const card = el("div", { class: `thread${collapsed ? " collapsed" : ""}${activeThread === t.id ? " active" : ""}`, "data-thread": t.id });
   const head = el("div", { class: "thread-head", title: where }, el("span", {}, t.anchor.item === "general" ? "General" : `Item ${t.anchor.item}`), el("span", { class: "quote" }, where));
   head.addEventListener("click", () => {
-    if (mode === "inline") return card.classList.toggle("collapsed");
+    if (mode === "inline") {
+      setActive(t.id, false);
+      return renderPopFoot();
+    }
     if (activeThread === t.id) card.classList.toggle("collapsed");
     setActive(t.id, true);
   });
-  const body = el("div", { class: "thread-body" }, ...t.messages.map(renderMessage));
+  const body = el("div", { class: "thread-body" }, ...mergeToolSteps(t.messages).map(renderMessage));
   if (t.streaming) body.append(t.streaming.el);
   if (t.status === "running") {
     body.append(el("div", { class: "status" }, el("span", { class: "spinner" }), "Answering…", el("button", { type: "button", onclick: () => post(`threads/${t.id}/abort`, {}) }, "Stop")));
   } else {
     if (t.error) body.append(el("div", { class: "msg error" }, t.error));
-    const input = el("textarea", { rows: 1, placeholder: "Follow up… (⌘↵)" });
-    const send = async () => {
-      const text = input.value.trim();
-      if (!text) return;
-      t.messages.push({ role: "user", text });
-      t.status = "running";
-      t.error = null;
-      renderThread(t);
-      await post(`threads/${t.id}/messages`, { text }).catch((err) => {
-        t.status = "idle";
-        t.error = err.message;
-        renderThread(t);
-      });
-    };
-    input.addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && send());
-    body.append(el("div", { class: "follow" }, input, el("button", { type: "button", onclick: send }, "Send")));
+    if (mode !== "inline") {
+      const input = el("textarea", { rows: 1, placeholder: "Follow up… (⌘↵)" });
+      const send = () => input.value.trim() && sendFollowUp(t, input.value.trim());
+      input.addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && send());
+      body.append(el("div", { class: "follow" }, input, el("button", { type: "button", onclick: send }, "Send")));
+    }
   }
   card.append(head, body);
   if (existing) existing.replaceWith(card);
   else placeCard(t, card);
+  if (mode === "inline" && openGroup.includes(t.id)) renderPopFoot();
 }
 
 function streamingMessage(t) {
@@ -542,7 +667,7 @@ function streamingMessage(t) {
 
 function redrawStreaming(t) {
   const s = t.streaming;
-  s.el.replaceChildren(renderMessage({ role: "assistant", text: s.text, tools: s.tools }));
+  s.el.replaceChildren(renderMessage({ role: "assistant", text: s.text, tools: s.tools, streaming: true }));
 }
 
 async function reloadThread(tid) {
@@ -561,6 +686,7 @@ function onEvent(ev) {
     if (mode === "inline") openGroup = [ev.thread.id];
     refreshHighlights();
     layoutThreads();
+    if (mode === "inline") bringAnchorUp();
     return;
   }
   const t = threads.get(ev.thread);
