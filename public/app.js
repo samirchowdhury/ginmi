@@ -27,9 +27,8 @@ let state;
 const threads = new Map(); // id -> thread view
 const items = new Map(); // item id -> section element
 let activeThread = null;
-// "inline": a thread opens in a popover beside the passage it anchors to; "side": all threads in the right column.
-let mode = localStorage.getItem("ginmi.threadMode") ?? "inline";
-let openGroup = []; // inline mode: ids of the threads shown in the popover (all anchored to one passage)
+// A thread opens in a popover beside the passage it anchors to.
+let openGroup = []; // ids of the threads shown in the popover (all anchored to one passage)
 let openAnchorEl = null; // element the popover lines up with
 
 // ---------- Markdown ----------
@@ -249,33 +248,20 @@ function markDiagramAnchors() {
   });
 }
 
-function setActive(tid, scroll) {
+function setActive(tid) {
   activeThread = tid;
   for (const card of document.querySelectorAll(".thread")) card.classList.toggle("active", card.dataset.thread === tid);
   refreshHighlights();
-  if (!scroll || !tid) return;
-  const t = threads.get(tid);
-  const range = anchorRange(t);
-  if (range) {
-    const rect = range.getBoundingClientRect();
-    window.scrollBy({ top: rect.top - window.innerHeight / 3, behavior: "smooth" });
-  } else items.get(t.anchor.item)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function focusItemThreads(item) {
   const ofItem = [...threads.values()].filter((t) => t.anchor.item === item);
   if (!ofItem.length) return;
-  if (mode === "inline") {
-    const block = anchorBlock(ofItem[0]);
-    const details = block?.closest("details");
-    if (details) details.open = true;
-    openGroup = [ofItem[0].id];
-    layoutThreads();
-    bringAnchorUp();
-    return;
-  }
-  setActive(ofItem[0].id, false);
-  document.querySelector(`.thread[data-thread="${ofItem[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const details = anchorBlock(ofItem[0])?.closest("details");
+  if (details) details.open = true;
+  openGroup = [ofItem[0].id];
+  layoutThreads();
+  bringAnchorUp();
 }
 
 // ---------- Thread placement ----------
@@ -418,16 +404,12 @@ const sendFromPop = () => {
 $("#pop-send").addEventListener("click", sendFromPop);
 $("#pop-input").addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && sendFromPop());
 
-// Rebuild where thread cards live for the current mode.
+// Rebuild the comment bubbles and the popover's contents.
 function layoutThreads() {
-  document.body.classList.toggle("inline-mode", mode === "inline");
-  $("#mode-toggle").textContent = mode === "inline" ? "Threads: beside text" : "Threads: column";
-  document.querySelectorAll(".bubble, .inline-general, .bubble-wrap, #threads .thread, #margin-pop .thread").forEach((e) => e.remove());
+  document.querySelectorAll(".bubble, .inline-general, .bubble-wrap, #margin-pop .thread").forEach((e) => e.remove());
   $("#margin-pop").hidden = true;
   openAnchorEl = null;
   const sorted = [...threads.values()].sort(createdOrder);
-  $("#threads-empty").hidden = threads.size > 0;
-  if (mode === "side") return sorted.forEach(renderThread);
 
   const groups = new Map(); // block (or null for general) -> threads
   for (const t of sorted) {
@@ -458,22 +440,13 @@ function layoutThreads() {
     }
   }
   if (!openAnchorEl) openGroup = [];
-  setActive(openGroup.at(-1) ?? null, false);
+  setActive(openGroup.at(-1) ?? null);
   positionPopover();
   renderPopFoot();
 }
 
 function placeCard(t, card) {
-  if (mode === "inline") {
-    if (openGroup.includes(t.id)) $("#margin-pop .pop-cards").append(card);
-    return;
-  }
-  const panel = $("#threads");
-  const after = [...panel.querySelectorAll(".thread")].find((c) => {
-    const o = threads.get(c.dataset.thread);
-    return o && createdOrder(o, t) > 0;
-  });
-  panel.insertBefore(card, after ?? null);
+  if (openGroup.includes(t.id)) $("#margin-pop .pop-cards").append(card);
 }
 
 $("#pop-close").addEventListener("click", () => {
@@ -484,14 +457,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#margin-pop").hidden && !e.target.closest("textarea, input")) $("#pop-close").click();
 });
 
-$("#mode-toggle").addEventListener("click", () => {
-  mode = mode === "inline" ? "side" : "inline";
-  localStorage.setItem("ginmi.threadMode", mode);
-  telemetry("thread_mode", { mode });
-  layoutThreads();
-});
-
-// Clicking highlighted text opens its thread (inline) or focuses it (side).
+// Clicking highlighted text opens its thread.
 $("#review").addEventListener("click", (e) => {
   if (!window.getSelection().isCollapsed || e.target.closest(".thread, .bubble, button, a, .mermaid-wrap, input, textarea")) return;
   const pos = document.caretPositionFromPoint?.(e.clientX, e.clientY);
@@ -499,11 +465,7 @@ $("#review").addEventListener("click", (e) => {
   if (!caret) return;
   const hit = [...threads.values()].find((t) => anchorRange(t)?.isPointInRange(...caret));
   if (!hit) return;
-  if (mode === "inline") toggleThreads([hit.id]);
-  else {
-    setActive(hit.id, false);
-    document.querySelector(`.thread[data-thread="${hit.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  toggleThreads([hit.id]);
 });
 
 // ---------- Asking ----------
@@ -570,7 +532,7 @@ $("#ask-form").addEventListener("submit", async (e) => {
   window.getSelection().removeAllRanges();
   try {
     const { thread } = await post("threads", { anchor, question });
-    setActive(thread, false);
+    setActive(thread);
   } catch (err) {
     alert(`Could not start thread: ${err.message}`);
   }
@@ -627,17 +589,13 @@ const itemOrder = (item) => [...items.keys()].indexOf(item);
 
 function renderThread(t) {
   const existing = document.querySelector(`.thread[data-thread="${t.id}"]`);
-  const collapsed = existing?.classList.contains("collapsed");
   const where = t.anchor.kind === "diagram" ? `◇ ${t.anchor.label}` : t.anchor.kind === "general" ? "whole review" : `“${t.anchor.quote}”`;
-  const card = el("div", { class: `thread${collapsed ? " collapsed" : ""}${activeThread === t.id ? " active" : ""}`, "data-thread": t.id });
+  const card = el("div", { class: `thread${activeThread === t.id ? " active" : ""}`, "data-thread": t.id });
   const head = el("div", { class: "thread-head", title: where }, el("span", {}, t.anchor.item === "general" ? "General" : `Item ${t.anchor.item}`), el("span", { class: "quote" }, where));
+  // With several threads on one passage, clicking a header picks which one the reply box answers.
   head.addEventListener("click", () => {
-    if (mode === "inline") {
-      setActive(t.id, false);
-      return renderPopFoot();
-    }
-    if (activeThread === t.id) card.classList.toggle("collapsed");
-    setActive(t.id, true);
+    setActive(t.id);
+    renderPopFoot();
   });
   const body = el("div", { class: "thread-body" }, ...mergeToolSteps(t.messages).map(renderMessage));
   if (t.streaming) body.append(t.streaming.el);
@@ -645,17 +603,11 @@ function renderThread(t) {
     body.append(el("div", { class: "status" }, el("span", { class: "spinner" }), "Answering…", el("button", { type: "button", onclick: () => post(`threads/${t.id}/abort`, {}) }, "Stop")));
   } else {
     if (t.error) body.append(el("div", { class: "msg error" }, t.error));
-    if (mode !== "inline") {
-      const input = el("textarea", { rows: 1, placeholder: "Follow up… (⌘↵)" });
-      const send = () => input.value.trim() && sendFollowUp(t, input.value.trim());
-      input.addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && send());
-      body.append(el("div", { class: "follow" }, input, el("button", { type: "button", onclick: send }, "Send")));
-    }
   }
   card.append(head, body);
   if (existing) existing.replaceWith(card);
   else placeCard(t, card);
-  if (mode === "inline" && openGroup.includes(t.id)) renderPopFoot();
+  if (openGroup.includes(t.id)) renderPopFoot();
 }
 
 function streamingMessage(t) {
@@ -683,10 +635,10 @@ function onEvent(ev) {
   if (ev.type === "base_status") return setBaseStatus(ev);
   if (ev.type === "thread_created") {
     threads.set(ev.thread.id, ev.thread);
-    if (mode === "inline") openGroup = [ev.thread.id];
+    openGroup = [ev.thread.id];
     refreshHighlights();
     layoutThreads();
-    if (mode === "inline") bringAnchorUp();
+    bringAnchorUp();
     return;
   }
   const t = threads.get(ev.thread);
@@ -719,43 +671,6 @@ function setBaseStatus(base) {
   s.className = base.status === "error" ? "error" : "";
   s.textContent = base.status === "warming" ? "Warming up the agent…" : base.status === "error" ? `Agent error: ${base.error}` : "";
 }
-
-// ---------- Resizable thread column ----------
-
-const DEFAULT_THREADS_WIDTH = 440;
-const setThreadsWidth = (px) => {
-  const width = Math.round(Math.min(Math.max(px, 280), window.innerWidth - 400));
-  document.documentElement.style.setProperty("--threads-width", `${width}px`);
-  return width;
-};
-const savedWidth = Number(localStorage.getItem("ginmi.threadsWidth"));
-if (savedWidth) setThreadsWidth(savedWidth);
-
-const resizer = $("#resizer");
-// Pointer capture suppresses dblclick, so detect a double press ourselves; it resets the width.
-let lastPress = 0;
-resizer.addEventListener("pointerdown", (e) => {
-  if (e.timeStamp - lastPress < 400) {
-    localStorage.removeItem("ginmi.threadsWidth");
-    setThreadsWidth(DEFAULT_THREADS_WIDTH);
-    lastPress = 0;
-    return;
-  }
-  lastPress = e.timeStamp;
-  resizer.setPointerCapture(e.pointerId);
-  document.body.classList.add("resizing");
-});
-resizer.addEventListener("pointermove", (e) => {
-  if (resizer.hasPointerCapture(e.pointerId)) setThreadsWidth(window.innerWidth - e.clientX - 3);
-});
-resizer.addEventListener("pointerup", (e) => {
-  if (!resizer.hasPointerCapture(e.pointerId)) return;
-  resizer.releasePointerCapture(e.pointerId);
-  document.body.classList.remove("resizing");
-  const width = setThreadsWidth(window.innerWidth - e.clientX - 3);
-  localStorage.setItem("ginmi.threadsWidth", String(width));
-  telemetry("threads_resize", { width });
-});
 
 // ---------- Startup ----------
 

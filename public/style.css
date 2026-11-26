@@ -31,17 +31,13 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 
 #topbar { position: sticky; top: 0; z-index: 10; display: flex; gap: 1em; align-items: center; padding: 0.6em 1.2em; border-bottom: 1px solid var(--line); background: var(--bg); }
 #topbar .brand { font-weight: 600; }
-#topbar #mode-toggle { margin-left: auto; }
+#topbar #ask-general { margin-left: auto; }
 #base-status { color: var(--muted); font-size: 0.85em; }
 #base-status.error { color: var(--high); }
 #progress { color: var(--muted); font-size: 0.9em; }
 
-#layout { display: grid; grid-template-columns: minmax(0, 1fr) 6px var(--threads-width, 440px); }
-#resizer { position: sticky; top: 49px; height: calc(100vh - 49px); cursor: col-resize; background: var(--line); background-clip: content-box; padding: 0 2px; }
-#resizer:hover, body.resizing #resizer { background: var(--accent); background-clip: content-box; padding: 0 1px; }
-body.resizing { cursor: col-resize; user-select: none; }
+body.resizing { cursor: ew-resize; user-select: none; }
 #review { padding: 1em 2.5em 40vh; max-width: 900px; line-height: 1.55; min-width: 0; }
-#threads { background: var(--panel); padding: 0.8em; height: calc(100vh - 49px); position: sticky; top: 49px; overflow-y: auto; }
 
 #review h1 { font-size: 1.6em; }
 #review h2 { margin-top: 2em; padding-bottom: 0.2em; border-bottom: 1px solid var(--line); }
@@ -86,7 +82,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .thread-head { padding: 0.5em 0.7em; border-bottom: 1px solid var(--line); font-size: 0.85em; color: var(--muted); cursor: pointer; display: flex; gap: 0.5em; }
 .thread-head .quote { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
 .thread-body { padding: 0.2em 0.8em 0.6em; font-size: 0.92em; line-height: 1.5; }
-.thread.collapsed .thread-body { display: none; }
 .msg.user { font-weight: 600; margin-top: 0.7em; }
 .msg.assistant { margin-top: 0.3em; }
 .msg.assistant > :first-child { margin-top: 0.2em; }
@@ -104,8 +99,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 #svg-pan-zoom-controls path { fill: var(--muted); }
 .thread code { background: var(--code); }
 .thread pre { background: var(--bg); }
-body.inline-mode #layout { grid-template-columns: minmax(0, 1fr); }
-body.inline-mode #threads, body.inline-mode #resizer { display: none; }
 .bubble { font-size: 0.78em; padding: 0.05em 0.5em; margin-left: 0.4em; border-radius: 10px; border: 1px solid var(--line); background: var(--code); color: var(--accent); vertical-align: 0.1em; }
 .bubble.open { background: var(--accent); color: #fff; border-color: var(--accent); }
 .inline-general { margin: 1em 0; }

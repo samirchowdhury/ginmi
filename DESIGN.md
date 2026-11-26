@@ -131,7 +131,7 @@ A normal scrolling page with a fixed template, not per-review generated HTML.
 - Each item: title, then **Decide**, **Scenario**, and **Fix** lines, with details collapsed below.
 - Source references link to GitLab at the pinned head SHA.
 - Decision buttons per item (accept / dismiss / defer), stored in the workspace.
-- Threads shown in the margin next to their anchor, with streaming answers.
+- Each anchored passage gets a 💬 bubble; clicking it (or the highlighted text) opens the thread in a popover beside the passage, sized to the viewport, with streaming answers and a pinned reply box. The review text never reflows.
 - Mermaid diagrams with zoom and pan (`svg-pan-zoom`); clicking a node starts a thread anchored to that node ID and label.
 
 ## Persistence
