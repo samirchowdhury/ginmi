@@ -72,10 +72,6 @@ body.resizing { cursor: ew-resize; user-select: none; }
 
 #ask-button { position: absolute; z-index: 20; background: var(--accent); color: #fff; border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.6); }
 #ask-button:hover { background: #539bf5; }
-#ask-form { position: absolute; z-index: 20; width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.7em; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
-#ask-form textarea { width: 100%; font: inherit; color: var(--fg); background: var(--bg); padding: 0.4em; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
-#ask-form .row { display: flex; gap: 0.5em; margin-top: 0.5em; }
-#ask-anchor { font-size: 0.85em; color: var(--muted); margin-bottom: 0.5em; max-height: 6em; overflow: hidden; }
 
 .thread { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 0.8em; }
 .thread.active { border-color: var(--should); box-shadow: 0 0 0 2px rgba(210, 153, 34, 0.3); }
@@ -125,3 +121,4 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .path-chip { min-width: 0; max-width: 32em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 0.82em ui-monospace, Menlo, monospace; color: var(--muted); background: var(--code); border: 1px solid transparent; padding: 0.2em 0.6em; }
 .path-chip:hover { color: var(--fg); border-color: var(--line); background: var(--code); }
 .path-chip .label { font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--fg); margin-right: 0.4em; }
+.thread.draft .thread-body .hint { margin: 0.6em 0; }

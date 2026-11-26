@@ -30,6 +30,7 @@ let activeThread = null;
 // A thread opens in a popover beside the passage it anchors to.
 let openGroup = []; // ids of the threads shown in the popover (all anchored to one passage)
 let openAnchorEl = null; // element the popover lines up with
+let draft = null; // a question being written: { anchor, anchorEl, range }
 
 // ---------- Markdown ----------
 
@@ -154,7 +155,7 @@ async function renderDiagrams() {
         const item = wrap.closest(".item")?.dataset.item ?? "general";
         const nodeId = mermaidNodeId(node);
         const label = node.textContent.trim();
-        openAskForm({ kind: "diagram", item, itemTitle: wrap.closest(".item")?.dataset.title, diagram: i, node: nodeId, label }, e.pageX, e.pageY);
+        openDraft({ kind: "diagram", item, itemTitle: wrap.closest(".item")?.dataset.title, diagram: i, node: nodeId, label }, wrap);
       });
     }
   });
@@ -228,7 +229,7 @@ function refreshHighlights() {
   if (!window.CSS?.highlights) return;
   const ranges = [...threads.values()].map(anchorRange).filter(Boolean);
   CSS.highlights.set("ginmi", new Highlight(...ranges));
-  const active = activeThread && anchorRange(threads.get(activeThread));
+  const active = draft?.range ?? (activeThread && anchorRange(threads.get(activeThread)));
   if (active) CSS.highlights.set("ginmi-active", new Highlight(active));
   else CSS.highlights.delete("ginmi-active");
   for (const [item, section] of items) {
@@ -379,9 +380,15 @@ const popTarget = () => threads.get(openGroup.includes(activeThread) ? activeThr
 function renderPopFoot() {
   const t = popTarget();
   const foot = $("#margin-pop .pop-foot");
-  foot.hidden = !t;
-  if (!t) return;
   const input = $("#pop-input");
+  foot.hidden = !t && !draft;
+  if (draft) {
+    input.disabled = $("#pop-send").disabled = false;
+    input.placeholder = "Ask a question about this… (⌘↵)";
+    $("#pop-replying").textContent = "";
+    return;
+  }
+  if (!t) return;
   input.disabled = t.status === "running";
   input.placeholder = t.status === "running" ? "Waiting for the answer…" : "Follow up… (⌘↵)";
   $("#pop-send").disabled = input.disabled;
@@ -402,6 +409,7 @@ async function sendFollowUp(t, text) {
 }
 
 const sendFromPop = () => {
+  if (draft) return askDraft();
   const t = popTarget();
   const text = $("#pop-input").value.trim();
   if (!t || !text || t.status === "running") return;
@@ -412,7 +420,10 @@ const sendFromPop = () => {
   });
 };
 $("#pop-send").addEventListener("click", sendFromPop);
-$("#pop-input").addEventListener("keydown", (e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && sendFromPop());
+$("#pop-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendFromPop();
+  if (e.key === "Escape") $("#pop-close").click();
+});
 
 // Rebuild the comment bubbles and the popover's contents.
 function layoutThreads() {
@@ -443,6 +454,7 @@ function layoutThreads() {
       block.after(el("div", { class: "bubble-wrap" }, bubble));
     } else block.append(bubble);
     if (open) {
+      $("#margin-pop .pop-head .hint").textContent = "Thread";
       openGroup = ids;
       openAnchorEl = anchorEl;
       $("#margin-pop").hidden = false;
@@ -450,6 +462,7 @@ function layoutThreads() {
     }
   }
   if (!openAnchorEl) openGroup = [];
+  if (draft && !openGroup.length) renderDraft();
   setActive(openGroup.at(-1) ?? null);
   positionPopover();
   renderPopFoot();
@@ -461,6 +474,8 @@ function placeCard(t, card) {
 
 $("#pop-close").addEventListener("click", () => {
   openGroup = [];
+  draft = null;
+  $("#pop-input").value = "";
   layoutThreads();
 });
 document.addEventListener("keydown", (e) => {
@@ -480,73 +495,74 @@ $("#review").addEventListener("click", (e) => {
 
 // ---------- Asking ----------
 
-let pendingAnchor = null;
+// The block a new question lines up with: the paragraph or list item holding the selection.
+const blockOf = (node) => (node.nodeType === Node.TEXT_NODE ? node.parentElement : node).closest("li, p, h1, h2, h3, h4, pre, blockquote, td, th");
 
-function hideAsk() {
+// Open the popover as a draft thread for a new question, the same way an existing thread opens.
+function openDraft(anchor, anchorEl, range = null) {
   $("#ask-button").hidden = true;
-  $("#ask-form").hidden = true;
-  pendingAnchor = null;
+  openGroup = [];
+  draft = { anchor, anchorEl: anchorEl ?? $("#review h1") ?? $("#review"), range };
+  $("#pop-input").value = "";
+  layoutThreads();
+  bringAnchorUp();
+  $("#pop-input").focus({ preventScroll: true });
 }
 
-function openAskForm(anchor, x, y) {
-  pendingAnchor = anchor;
-  $("#ask-button").hidden = true;
-  const form = $("#ask-form");
-  const where = anchor.kind === "diagram" ? `Diagram node: ${anchor.label}` : anchor.kind === "general" ? "The whole review" : `“${anchor.quote}”`;
-  $("#ask-anchor").textContent = `Item ${anchor.item} · ${where}`;
-  form.hidden = false;
-  form.style.left = `${Math.min(x, window.scrollX + window.innerWidth - 440)}px`;
-  form.style.top = `${y + 12}px`;
-  $("#ask-text").value = "";
-  $("#ask-text").focus();
+function renderDraft() {
+  const { anchor } = draft;
+  const where = anchor.kind === "diagram" ? `◇ ${anchor.label}` : anchor.kind === "general" ? "whole review" : `“${anchor.quote}”`;
+  const card = el(
+    "div",
+    { class: "thread active draft" },
+    el("div", { class: "thread-head", title: where }, el("span", {}, anchor.item === "general" ? "General" : `Item ${anchor.item}`), el("span", { class: "quote" }, where)),
+    el("div", { class: "thread-body" }, el("p", { class: "hint" }, "New question. Type it below and press ⌘↵ to send.")),
+  );
+  $("#margin-pop .pop-cards").append(card);
+  openAnchorEl = draft.anchorEl;
+  $("#margin-pop .pop-head .hint").textContent = "New question";
+  $("#margin-pop").hidden = false;
+}
+
+async function askDraft() {
+  const question = $("#pop-input").value.trim();
+  if (!question || !draft) return;
+  const { anchor } = draft;
+  $("#pop-input").value = "";
+  $("#pop-input").disabled = $("#pop-send").disabled = true;
+  window.getSelection().removeAllRanges();
+  try {
+    await post("threads", { anchor, question });
+  } catch (err) {
+    $("#pop-input").value = question;
+    $("#pop-input").disabled = $("#pop-send").disabled = false;
+    alert(`Could not start thread: ${err.message}`);
+  }
 }
 
 document.addEventListener("mouseup", (e) => {
-  if (e.target.closest("#ask-form, #ask-button")) return;
+  if (e.target.closest("#ask-button, #margin-pop")) return;
   setTimeout(() => {
     const sel = window.getSelection();
     const text = sel.toString().trim();
     const node = sel.anchorNode?.parentElement;
     if (!text || !node?.closest("#review") || node.closest(".decision")) {
-      if (!$("#ask-form").hidden && !e.target.closest(".mermaid-wrap")) return;
       $("#ask-button").hidden = true;
       return;
     }
     const section = node.closest(".item");
-    const range = sel.getRangeAt(0);
+    const range = sel.getRangeAt(0).cloneRange();
     const rect = range.getBoundingClientRect();
     const anchor = { kind: "text", item: section?.dataset.item ?? "general", itemTitle: section?.dataset.title, quote: text };
     const button = $("#ask-button");
     button.hidden = false;
     button.style.left = `${rect.right + window.scrollX - 20}px`;
     button.style.top = `${rect.bottom + window.scrollY + 6}px`;
-    button.onclick = () => openAskForm(anchor, rect.left + window.scrollX, rect.bottom + window.scrollY);
+    button.onclick = () => openDraft(anchor, blockOf(range.startContainer) ?? section, range);
   });
 });
 
-$("#ask-general").addEventListener("click", (e) => {
-  const r = e.target.getBoundingClientRect();
-  openAskForm({ kind: "general", item: "general" }, r.left + window.scrollX - 300, r.bottom + window.scrollY);
-});
-$("#ask-cancel").addEventListener("click", hideAsk);
-$("#ask-text").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#ask-form").requestSubmit();
-  if (e.key === "Escape") hideAsk();
-});
-$("#ask-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const question = $("#ask-text").value.trim();
-  if (!question || !pendingAnchor) return;
-  const anchor = pendingAnchor;
-  hideAsk();
-  window.getSelection().removeAllRanges();
-  try {
-    const { thread } = await post("threads", { anchor, question });
-    setActive(thread);
-  } catch (err) {
-    alert(`Could not start thread: ${err.message}`);
-  }
-});
+$("#ask-general").addEventListener("click", () => openDraft({ kind: "general", item: "general" }, null));
 
 // ---------- Threads panel ----------
 
@@ -652,6 +668,7 @@ function onEvent(ev) {
   if (ev.type === "thread_created") {
     threads.set(ev.thread.id, ev.thread);
     openGroup = [ev.thread.id];
+    draft = null;
     refreshHighlights();
     layoutThreads();
     bringAnchorUp();
