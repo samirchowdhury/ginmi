@@ -119,3 +119,5 @@ body.resizing { cursor: ew-resize; user-select: none; }
 #margin-pop .pop-resize.left { left: -5px; }
 #margin-pop .pop-resize.right { right: -5px; }
 #margin-pop .pop-resize:hover { background: var(--accent); opacity: 0.5; border-radius: 4px; }
+.thread-head .thread-delete { flex: none; font-size: 0.85em; padding: 0 0.5em; color: var(--muted); background: none; border-color: transparent; }
+.thread-head .thread-delete:hover { color: var(--high); border-color: var(--high); background: none; }

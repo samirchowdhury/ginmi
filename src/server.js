@@ -101,6 +101,10 @@ async function route(req, res) {
     await rt.followUp(tid, body.text);
     return json(res, 200, { ok: true });
   }
+  if (resource === "threads" && action === "delete") {
+    await rt.deleteThread(tid);
+    return json(res, 200, { ok: true });
+  }
   if (resource === "threads" && action === "abort") {
     await rt.abort(tid);
     return json(res, 200, { ok: true });

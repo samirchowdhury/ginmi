@@ -601,7 +601,13 @@ function renderThread(t) {
   const existing = document.querySelector(`.thread[data-thread="${t.id}"]`);
   const where = t.anchor.kind === "diagram" ? `◇ ${t.anchor.label}` : t.anchor.kind === "general" ? "whole review" : `“${t.anchor.quote}”`;
   const card = el("div", { class: `thread${activeThread === t.id ? " active" : ""}`, "data-thread": t.id });
-  const head = el("div", { class: "thread-head", title: where }, el("span", {}, t.anchor.item === "general" ? "General" : `Item ${t.anchor.item}`), el("span", { class: "quote" }, where));
+  const del = el("button", { type: "button", class: "thread-delete", title: "Delete this thread" }, "Delete");
+  del.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!confirm("Delete this thread? It will be removed from the review feedback.")) return;
+    await post(`threads/${t.id}/delete`, {}).catch((err) => alert(`Could not delete thread: ${err.message}`));
+  });
+  const head = el("div", { class: "thread-head", title: where }, el("span", {}, t.anchor.item === "general" ? "General" : `Item ${t.anchor.item}`), el("span", { class: "quote" }, where), del);
   // With several threads on one passage, clicking a header picks which one the reply box answers.
   head.addEventListener("click", () => {
     setActive(t.id);
@@ -649,6 +655,13 @@ function onEvent(ev) {
     refreshHighlights();
     layoutThreads();
     bringAnchorUp();
+    return;
+  }
+  if (ev.type === "thread_deleted") {
+    threads.delete(ev.thread);
+    openGroup = openGroup.filter((tid) => tid !== ev.thread);
+    if (activeThread === ev.thread) activeThread = null;
+    layoutThreads();
     return;
   }
   const t = threads.get(ev.thread);

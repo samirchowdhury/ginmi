@@ -1,7 +1,7 @@
 // Per-workspace runtime: pi RPC threads, seeding, digests, decisions, and telemetry.
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
@@ -283,6 +283,25 @@ export class Runtime {
     if (t.status === "running") throw new Error("Thread is still answering");
     this.#telemetry("question", { thread: tid, item: t.anchor.item, question: text, follow_up: true });
     await this.#prompt(tid, text, text);
+  }
+
+  // Move the thread's files to ginmi/trash (recoverable by hand) and drop its digests so later threads don't see it.
+  async deleteThread(tid) {
+    const t = this.threads.get(tid);
+    if (!t) throw new Error(`No thread ${tid}`);
+    clearTimeout(t.idleTimer);
+    if (t.status === "running") await t.proc?.send({ type: "abort" });
+    t.proc?.kill();
+    this.threads.delete(tid);
+    const trash = join(this.p.state, "trash");
+    mkdirSync(trash, { recursive: true });
+    for (const f of [`${tid}.jsonl`, `${tid}.anchor.json`]) {
+      if (existsSync(join(this.p.threads, f))) renameSync(join(this.p.threads, f), join(trash, f));
+    }
+    const kept = readJsonl(this.p.summaries).filter((d) => d.thread !== tid);
+    writeFileSync(this.p.summaries, kept.map((d) => JSON.stringify(d) + "\n").join(""));
+    this.#telemetry("thread_deleted", { thread: tid, item: t.anchor.item });
+    this.#broadcast({ type: "thread_deleted", thread: tid });
   }
 
   async abort(tid) {
