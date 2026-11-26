@@ -4,11 +4,13 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { codeVersion, DATA_DIR, PORT, readRegistry, REGISTRY, serve } from "../src/server.js";
+import { feedbackHandoff } from "../src/feedback.js";
 import { prepareWorkspace } from "../src/workspace.js";
 
 const BASE = `http://127.0.0.1:${PORT}`;
 const USAGE = `Usage:
   ginmi open <workspace> [--browser]   Prepare a review workspace and print its URL
+  ginmi feedback <workspace>           Print the review feedback as a handoff for an agent
   ginmi serve                          Run the server in the foreground
   ginmi stop                           Stop the background server`;
 
@@ -57,6 +59,7 @@ async function open(ws, browser) {
 const [cmd, ...args] = process.argv.slice(2);
 try {
   if (cmd === "open" && args[0]) await open(args[0], args.includes("--browser"));
+  else if (cmd === "feedback" && args[0]) console.log(feedbackHandoff(args[0]));
   else if (cmd === "serve") serve();
   else if (cmd === "stop") console.log((await stopServer()) ? "stopped" : "not running");
   else {

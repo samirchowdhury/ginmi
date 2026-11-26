@@ -17,8 +17,11 @@ A review workspace is a directory containing `review.json` (see [DESIGN.md](DESI
 
 ```sh
 ginmi open <workspace>    # prepare the clone and context pack, start the server, print the URL
+ginmi feedback <workspace>  # print your decisions and threads as a handoff for an agent
 ginmi stop                # stop the background server
 ```
+
+To have an agent act on your feedback, click **Copy feedback handoff** in the page and paste the line into any agent session started in a checkout of the MR branch (or add "in a new worktree").
 
 The server listens on `127.0.0.1:7477` (`GINMI_PORT` to change) and logs to `~/.local/share/ginmi/server.log`.
 Set `GINMI_MODEL` to choose the pi model for answers; otherwise pi's default is used.

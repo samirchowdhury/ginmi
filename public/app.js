@@ -682,6 +682,18 @@ function setBaseStatus(base) {
   s.textContent = base.status === "warming" ? "Warming up the agent…" : base.status === "error" ? `Agent error: ${base.error}` : "";
 }
 
+// ---------- Handoff ----------
+
+$("#copy-handoff").addEventListener("click", async () => {
+  const ws = state.workspace;
+  const line = `Work on the review feedback in ${ws}: run \`ginmi feedback ${ws}\` and follow the instructions at the top of its output.`;
+  await navigator.clipboard.writeText(line);
+  const b = $("#copy-handoff");
+  b.textContent = "Copied ✓";
+  setTimeout(() => (b.textContent = "Copy feedback handoff"), 1500);
+  telemetry("copy_handoff");
+});
+
 // ---------- Startup ----------
 
 async function main() {

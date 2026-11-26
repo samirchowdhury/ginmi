@@ -323,6 +323,7 @@ export class Runtime {
   state() {
     return {
       id: this.p.id,
+      workspace: this.p.root,
       manifest: this.m,
       review: readFileSync(join(this.p.root, this.m.review), "utf8"),
       threads: [...this.threads.keys()].map((tid) => this.#threadView(tid)),
