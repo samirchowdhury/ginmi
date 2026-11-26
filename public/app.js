@@ -335,33 +335,43 @@ function bringAnchorUp() {
   if (top < POP_TOP || top > window.innerHeight * 0.25) window.scrollBy({ top: top - POP_TOP - 16, behavior: "smooth" });
 }
 
-// 6: drag the popover's left edge to resize it; double-press resets to the default width.
-const popResize = $("#margin-pop .pop-resize");
+// 6: drag either edge of the popover to resize it; the opposite edge stays put. Double-press resets.
 let popLastPress = 0;
-let popRight = 0;
-popResize.addEventListener("pointerdown", (e) => {
-  if (e.timeStamp - popLastPress < 400) {
-    localStorage.removeItem("ginmi.popSize");
-    popLastPress = 0;
-    return positionPopover();
-  }
-  popLastPress = e.timeStamp;
-  popRight = $("#margin-pop").getBoundingClientRect().right;
-  popResize.setPointerCapture(e.pointerId);
-  document.body.classList.add("resizing");
-});
-popResize.addEventListener("pointermove", (e) => {
-  if (!popResize.hasPointerCapture(e.pointerId)) return;
-  const width = clamp(popRight - e.clientX, 320, window.innerWidth - 80);
-  localStorage.setItem("ginmi.popSize", JSON.stringify({ width, rightGap: window.innerWidth - popRight }));
-  positionPopover();
-});
-popResize.addEventListener("pointerup", (e) => {
-  if (!popResize.hasPointerCapture(e.pointerId)) return;
-  popResize.releasePointerCapture(e.pointerId);
-  document.body.classList.remove("resizing");
-  telemetry("popover_resize", JSON.parse(localStorage.getItem("ginmi.popSize") ?? "{}"));
-});
+for (const handle of document.querySelectorAll("#margin-pop .pop-resize")) {
+  const isLeft = handle.classList.contains("left");
+  let fixedEdge = 0;
+  let downX = 0;
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.timeStamp - popLastPress < 400) {
+      localStorage.removeItem("ginmi.popSize");
+      popLastPress = 0;
+      return positionPopover();
+    }
+    downX = e.clientX;
+    const rect = $("#margin-pop").getBoundingClientRect();
+    fixedEdge = isLeft ? rect.right : rect.left;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    const maxWidth = isLeft ? fixedEdge - POP_MARGIN : window.innerWidth - POP_MARGIN - fixedEdge;
+    const width = clamp(isLeft ? fixedEdge - e.clientX : e.clientX - fixedEdge, 320, maxWidth);
+    const right = isLeft ? fixedEdge : fixedEdge + width;
+    localStorage.setItem("ginmi.popSize", JSON.stringify({ width, rightGap: window.innerWidth - right }));
+    positionPopover();
+  });
+  handle.addEventListener("pointerup", (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    document.body.classList.remove("resizing");
+    // Only a click without movement counts toward a double-click reset.
+    const moved = Math.abs(e.clientX - downX) > 3;
+    popLastPress = moved ? 0 : e.timeStamp;
+    if (!moved) return;
+    telemetry("popover_resize", { edge: isLeft ? "left" : "right", ...JSON.parse(localStorage.getItem("ginmi.popSize") ?? "{}") });
+  });
+}
 
 // 3: the follow-up box is pinned to the popover's bottom and replies to the active thread.
 const popTarget = () => threads.get(openGroup.includes(activeThread) ? activeThread : openGroup.at(-1));

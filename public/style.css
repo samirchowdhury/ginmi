@@ -115,5 +115,7 @@ body.resizing { cursor: ew-resize; user-select: none; }
 #margin-pop .pop-foot .follow { margin-top: 0; }
 #margin-pop #pop-replying:empty { display: none; }
 #margin-pop #pop-replying { margin: 0 0 0.3em; font-size: 0.82em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#margin-pop .pop-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+#margin-pop .pop-resize { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+#margin-pop .pop-resize.left { left: -5px; }
+#margin-pop .pop-resize.right { right: -5px; }
 #margin-pop .pop-resize:hover { background: var(--accent); opacity: 0.5; border-radius: 4px; }
