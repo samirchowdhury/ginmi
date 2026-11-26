@@ -81,6 +81,7 @@ async function route(req, res) {
   const [, , , resource, tid, action] = parts;
 
   if (req.method === "GET" && resource === "state") return json(res, 200, rt.state());
+  if (req.method === "GET" && resource === "worktrees") return json(res, 200, { worktrees: rt.worktrees() });
   if (req.method === "GET" && resource === "events") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     res.write(": connected\n\n");

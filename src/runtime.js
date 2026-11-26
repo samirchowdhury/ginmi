@@ -327,6 +327,26 @@ export class Runtime {
     return { id: tid, anchor: t.anchor, status: t.status, messages };
   }
 
+  // Worktrees of the user's local clone that have the MR's source branch (or a branch tracking it) checked out.
+  worktrees() {
+    if (!this.m.repo || !this.m.source_branch || !existsSync(this.m.repo)) return [];
+    const git = (...args) => execFileSync("git", args, { cwd: this.m.repo, encoding: "utf8" });
+    const upstream = Object.fromEntries(
+      git("for-each-ref", "--format=%(refname:short) %(upstream:short)", "refs/heads")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => l.split(" ")),
+    );
+    const matches = (branch) => branch === this.m.source_branch || (upstream[branch] ?? "").replace(/^[^/]+\//, "") === this.m.source_branch;
+    return git("worktree", "list", "--porcelain")
+      .split("\n\n")
+      .map((block) => ({
+        path: block.match(/^worktree (.+)$/m)?.[1],
+        branch: block.match(/^branch refs\/heads\/(.+)$/m)?.[1],
+      }))
+      .filter((w) => w.path && w.branch && matches(w.branch));
+  }
+
   decisions() {
     return existsSync(this.p.decisions) ? JSON.parse(readFileSync(this.p.decisions, "utf8")) : {};
   }

@@ -695,10 +695,35 @@ function setBaseStatus(base) {
   s.textContent = base.status === "warming" ? "Warming up the agent…" : base.status === "error" ? `Agent error: ${base.error}` : "";
 }
 
+// ---------- Paths ----------
+
+// macOS resolves /tmp to /private/tmp; show and copy the familiar /tmp form. Display also shortens the home directory.
+const tmpPath = (p) => p.replace(/^\/private\/tmp\//, "/tmp/");
+const shortPath = (p) => tmpPath(p).replace(/^\/Users\/[^/]+\//, "~/");
+
+function pathChip(label, path) {
+  const chip = el("button", { type: "button", class: "path-chip", title: `${path}\n(click to copy)` }, el("span", { class: "label" }, label), shortPath(path));
+  chip.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(tmpPath(path));
+    chip.lastChild.textContent = "copied ✓";
+    setTimeout(() => (chip.lastChild.textContent = shortPath(path)), 1200);
+  });
+  return chip;
+}
+
+async function renderPaths() {
+  const { worktrees } = await fetch(api("worktrees")).then((r) => r.json()).catch(() => ({ worktrees: [] }));
+  $("#paths").replaceChildren(
+    pathChip("ginmi", state.workspace),
+    ...worktrees.map((w) => pathChip(`worktree (${w.branch})`, w.path)),
+  );
+}
+window.addEventListener("focus", () => state && renderPaths());
+
 // ---------- Handoff ----------
 
 $("#copy-handoff").addEventListener("click", async () => {
-  const ws = state.workspace;
+  const ws = tmpPath(state.workspace);
   const line = `Work on the review feedback in ${ws}: run \`ginmi feedback ${ws}\` and follow the instructions at the top of its output.`;
   await navigator.clipboard.writeText(line);
   const b = $("#copy-handoff");
@@ -723,6 +748,7 @@ async function main() {
     mr.textContent = m.title ?? m.url;
   }
   setBaseStatus(state.base);
+  renderPaths();
   renderReview();
   for (const t of state.threads) threads.set(t.id, t);
   refreshHighlights();
