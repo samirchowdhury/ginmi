@@ -35,6 +35,7 @@ export function paths(ws) {
     base: join(root, "ginmi", "base.jsonl"),
     summaries: join(root, "ginmi", "summaries.jsonl"),
     decisions: join(root, "ginmi", "decisions.json"),
+    todos: join(root, "ginmi", "todos.json"),
     events: join(root, "ginmi", "events.jsonl"),
   };
 }

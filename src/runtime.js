@@ -298,6 +298,11 @@ export class Runtime {
     for (const f of [`${tid}.jsonl`, `${tid}.anchor.json`]) {
       if (existsSync(join(this.p.threads, f))) renameSync(join(this.p.threads, f), join(trash, f));
     }
+    const todos = this.todos();
+    if (todos.some((x) => x.thread === tid)) {
+      writeFileSync(join(trash, `${tid}.todos.json`), JSON.stringify(todos.filter((x) => x.thread === tid), null, 2));
+      this.#saveTodos(todos.filter((x) => x.thread !== tid));
+    }
     const kept = readJsonl(this.p.summaries).filter((d) => d.thread !== tid);
     writeFileSync(this.p.summaries, kept.map((d) => JSON.stringify(d) + "\n").join(""));
     this.#telemetry("thread_deleted", { thread: tid, item: t.anchor.item });
@@ -347,6 +352,42 @@ export class Runtime {
       .filter((w) => w.path && w.branch && matches(w.branch));
   }
 
+  // TODOs: notes the user leaves on a thread for the agent that later acts on the feedback. No model call.
+  todos() {
+    return existsSync(this.p.todos) ? JSON.parse(readFileSync(this.p.todos, "utf8")) : [];
+  }
+
+  #saveTodos(todos) {
+    writeFileSync(this.p.todos, JSON.stringify(todos, null, 2));
+    this.#broadcast({ type: "todos", todos });
+  }
+
+  addTodo(tid, text) {
+    const t = this.threads.get(tid);
+    if (!t) throw new Error(`No thread ${tid}`);
+    const now = new Date().toISOString();
+    const todo = { id: randomUUID().slice(0, 8), thread: tid, item: t.anchor.item, text, created: now, updated: now };
+    this.#saveTodos([...this.todos(), todo]);
+    this.#telemetry("todo_add", { todo: todo.id, thread: tid, item: todo.item, text });
+    return todo;
+  }
+
+  updateTodo(id, text) {
+    const todos = this.todos();
+    const todo = todos.find((x) => x.id === id);
+    if (!todo) throw new Error(`No TODO ${id}`);
+    Object.assign(todo, { text, updated: new Date().toISOString() });
+    this.#saveTodos(todos);
+    this.#telemetry("todo_edit", { todo: id, thread: todo.thread, item: todo.item, text });
+  }
+
+  deleteTodo(id) {
+    const todo = this.todos().find((x) => x.id === id);
+    if (!todo) throw new Error(`No TODO ${id}`);
+    this.#saveTodos(this.todos().filter((x) => x.id !== id));
+    this.#telemetry("todo_delete", { todo: id, thread: todo.thread, item: todo.item });
+  }
+
   decisions() {
     return existsSync(this.p.decisions) ? JSON.parse(readFileSync(this.p.decisions, "utf8")) : {};
   }
@@ -367,6 +408,7 @@ export class Runtime {
       review: readFileSync(join(this.p.root, this.m.review), "utf8"),
       threads: [...this.threads.keys()].map((tid) => this.#threadView(tid)),
       decisions: this.decisions(),
+      todos: this.todos(),
       files: this.files,
       base: this.base,
     };

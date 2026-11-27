@@ -37,6 +37,7 @@ export function feedbackHandoff(ws) {
         .sort((a, b) => a.created.localeCompare(b.created))
     : [];
 
+  const todos = existsSync(p.todos) ? JSON.parse(readFileSync(p.todos, "utf8")).sort((a, b) => a.created.localeCompare(b.created)) : [];
   const branch = m.source_branch ? `\`${m.source_branch}\`` : "the MR's source branch";
   const lines = [
     `# Review feedback: ${m.title ?? p.id}`,
@@ -53,7 +54,9 @@ export function feedbackHandoff(ws) {
     "   If the branch has moved since, say so and check whether the feedback still applies before editing.",
     "3. Treat the user's questions and statements as requirements and preferences.",
     "   Treat the answers as leads from another agent: verify them in the code before relying on them.",
-    "4. Accepted items: fix them. Deferred items: list them, do not change them. Dismissed items: leave them alone.",
+    "4. TODOs are explicit tasks the user left for you. Do each one, using the thread it is attached to for context.",
+    "   If a TODO conflicts with its item's decision or with another TODO, ask.",
+    "   Accepted items: fix them. Deferred items: list them, do not change them. Dismissed items: leave them alone.",
     "   Items without a decision: ask the user, unless their threads make the intent clear.",
     "5. Before editing, propose a short plan per item and wait for the user's go-ahead.",
     "6. Do not push, open MRs, or post review comments without explicit permission.",
@@ -64,6 +67,16 @@ export function feedbackHandoff(ws) {
     "",
   ];
 
+  const where = (t) =>
+    t.kind === "diagram" ? `diagram node "${t.label}"` : t.kind === "general" ? "the review as a whole" : `"${t.quote.trim().replace(/\s+/g, " ").slice(0, 120)}"`;
+  if (todos.length) {
+    lines.push("## TODOs", "");
+    todos.forEach((x, i) => {
+      const t = threads.find((t) => t.thread === x.thread);
+      lines.push(`${i + 1}. Item ${x.item}, thread ${x.thread}${t ? ` (on ${where(t)})` : ""}:`, "", `   ${x.text.trim().replace(/\n/g, "\n   ")}`, "");
+    });
+  }
+
   const renderThreads = (ts) => {
     for (const t of ts) {
       const where =
@@ -72,6 +85,7 @@ export function feedbackHandoff(ws) {
       for (const x of exchanges(join(p.threads, `${t.thread}.jsonl`), t.question)) {
         lines.push("**User:**", "", `> ${quote(x.question)}`, "", "**Answer:**", "", x.answer.trim() || "(no answer)", "");
       }
+      for (const x of todos.filter((x) => x.thread === t.thread)) lines.push("**TODO from the user:**", "", `> ${quote(x.text)}`, "");
     }
   };
 

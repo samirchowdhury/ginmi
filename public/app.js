@@ -384,6 +384,7 @@ function renderPopFoot() {
   const foot = $("#margin-pop .pop-foot");
   const input = $("#pop-input");
   foot.hidden = !t && !draft;
+  $("#pop-todo").hidden = !!draft;
   if (draft) {
     input.disabled = $("#pop-send").disabled = false;
     input.placeholder = "Ask a question about this… (⌘↵)";
@@ -430,6 +431,16 @@ function autosizeInput() {
 }
 $("#pop-input").addEventListener("input", autosizeInput);
 $("#pop-send").addEventListener("click", sendFromPop);
+$("#pop-todo").addEventListener("click", async () => {
+  const t = popTarget();
+  const text = $("#pop-input").value.trim();
+  if (!t || !text || draft) return;
+  await post(`threads/${t.id}/todos`, { text });
+  $("#pop-input").value = "";
+  autosizeInput();
+  const cards = $("#margin-pop .pop-cards");
+  cards.scrollTop = cards.scrollHeight;
+});
 $("#pop-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendFromPop();
   if (e.key === "Escape") $("#pop-close").click();
@@ -453,7 +464,7 @@ function layoutThreads() {
     const bubble = el(
       "button",
       { type: "button", class: `bubble${open ? " open" : ""}`, title: open ? "Hide thread" : "Show thread", onclick: (e) => (e.stopPropagation(), toggleThreads(ids)) },
-      `💬 ${group.length}`,
+      `💬 ${group.length}${group.some((t) => todosOf(t.id).length) ? " · TODO" : ""}`,
     );
     let anchorEl = block;
     if (!block) {
@@ -649,6 +660,7 @@ function renderThread(t) {
   });
   const body = el("div", { class: "thread-body" }, ...mergeToolSteps(t.messages).map(renderMessage));
   if (t.streaming) body.append(t.streaming.el);
+  for (const todo of todosOf(t.id)) body.append(todoCard(todo));
   if (t.status === "running") {
     body.append(el("div", { class: "status" }, el("span", { class: "spinner" }), "Answering…", el("button", { type: "button", onclick: () => post(`threads/${t.id}/abort`, {}) }, "Stop")));
   } else {
@@ -690,6 +702,13 @@ function onEvent(ev) {
     refreshHighlights();
     layoutThreads();
     bringAnchorUp();
+    return;
+  }
+  if (ev.type === "todos") {
+    state.todos = ev.todos;
+    renderTodoCount();
+    for (const tid of openGroup) if (threads.has(tid)) renderThread(threads.get(tid));
+    layoutBubblesOnly();
     return;
   }
   if (ev.type === "thread_deleted") {
@@ -755,6 +774,83 @@ async function renderPaths() {
 }
 window.addEventListener("focus", () => state && renderPaths());
 
+// ---------- TODOs ----------
+
+const todosOf = (tid) => (state.todos ?? []).filter((x) => x.thread === tid).sort((a, b) => a.created.localeCompare(b.created));
+
+function todoCard(todo) {
+  const card = el("div", { class: "todo", "data-todo": todo.id });
+  const view = () => {
+    const body = el("div", { class: "todo-text" });
+    body.innerHTML = mdUser.render(todo.text);
+    card.replaceChildren(
+      el(
+        "div",
+        { class: "todo-head" },
+        el("span", {}, "TODO for handoff"),
+        el("button", { type: "button", onclick: edit }, "Edit"),
+        el("button", { type: "button", onclick: remove }, "Delete"),
+      ),
+      body,
+    );
+  };
+  const edit = () => {
+    const input = el("textarea", { class: "todo-edit" });
+    input.value = todo.text;
+    const save = async () => {
+      const text = input.value.trim();
+      if (!text) return remove();
+      await post(`todos/${todo.id}`, { text });
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+      if (e.key === "Escape") (e.stopPropagation(), view());
+    });
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = `${input.scrollHeight + 2}px`;
+    });
+    card.replaceChildren(
+      el("div", { class: "todo-head" }, el("span", {}, "TODO for handoff"), el("button", { type: "button", onclick: save }, "Save"), el("button", { type: "button", onclick: view }, "Cancel")),
+      input,
+    );
+    input.focus();
+    input.dispatchEvent(new Event("input"));
+  };
+  const remove = async () => {
+    if (confirm("Delete this TODO?")) await post(`todos/${todo.id}/delete`, {});
+  };
+  view();
+  return card;
+}
+
+// Rebuild bubbles (their TODO markers) while keeping the popover's current contents.
+function layoutBubblesOnly() {
+  const scroll = $("#margin-pop .pop-cards").scrollTop;
+  layoutThreads();
+  $("#margin-pop .pop-cards").scrollTop = scroll;
+}
+
+let todoCursor = 0;
+function renderTodoCount() {
+  const n = (state.todos ?? []).length;
+  const b = $("#todo-count");
+  b.hidden = !n;
+  b.textContent = `${n} TODO${n === 1 ? "" : "s"}`;
+}
+$("#todo-count").addEventListener("click", () => {
+  const todos = [...state.todos].sort((a, b) => a.created.localeCompare(b.created));
+  if (!todos.length) return;
+  const todo = todos[todoCursor++ % todos.length];
+  const details = anchorBlock(threads.get(todo.thread))?.closest("details");
+  if (details) details.open = true;
+  draft = null;
+  openGroup = [todo.thread];
+  layoutThreads();
+  bringAnchorUp();
+  document.querySelector(`#margin-pop .todo[data-todo="${todo.id}"]`)?.scrollIntoView({ block: "nearest" });
+});
+
 // ---------- Handoff ----------
 
 $("#copy-handoff").addEventListener("click", async () => {
@@ -784,6 +880,7 @@ async function main() {
   }
   setBaseStatus(state.base);
   renderPaths();
+  renderTodoCount();
   renderReview();
   for (const t of state.threads) threads.set(t.id, t);
   refreshHighlights();

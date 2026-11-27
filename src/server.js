@@ -102,6 +102,15 @@ async function route(req, res) {
     await rt.followUp(tid, body.text);
     return json(res, 200, { ok: true });
   }
+  if (resource === "threads" && action === "todos") return json(res, 200, rt.addTodo(tid, body.text));
+  if (resource === "todos" && action === "delete") {
+    rt.deleteTodo(tid);
+    return json(res, 200, { ok: true });
+  }
+  if (resource === "todos" && tid) {
+    rt.updateTodo(tid, body.text);
+    return json(res, 200, { ok: true });
+  }
   if (resource === "threads" && action === "delete") {
     await rt.deleteThread(tid);
     return json(res, 200, { ok: true });

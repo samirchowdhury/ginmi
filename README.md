@@ -21,6 +21,7 @@ ginmi feedback <workspace>  # print your decisions and threads as a handoff for 
 ginmi stop                # stop the background server
 ```
 
+Use **Save as TODO** in a thread to leave a task for that agent without asking the model; TODOs are listed first in the handoff.
 To have an agent act on your feedback, click **Copy feedback handoff** in the page and paste the line into any agent session started in a checkout of the MR branch (or add "in a new worktree").
 
 The server listens on `127.0.0.1:7477` (`GINMI_PORT` to change) and logs to `~/.local/share/ginmi/server.log`.

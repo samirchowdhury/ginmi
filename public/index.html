@@ -17,6 +17,7 @@
     <span id="progress"></span>
     <span id="base-status"></span>
     <span id="paths"></span>
+    <button id="todo-count" type="button" hidden title="Open the next thread with a TODO"></button>
     <button id="copy-handoff" type="button" title="Copy a line to paste into any agent session">Copy feedback handoff</button>
     <button id="ask-general" type="button">Ask about the whole review</button>
   </header>
@@ -28,7 +29,7 @@
     <div class="pop-cards"></div>
     <div class="pop-foot" hidden>
       <div id="pop-replying" class="hint"></div>
-      <div class="follow"><textarea id="pop-input" rows="2"></textarea><button id="pop-send" type="button">Send</button></div>
+      <div class="follow"><textarea id="pop-input" rows="2"></textarea><div class="foot-buttons"><button id="pop-todo" type="button" title="Save for the agent that works on the feedback; no answer is generated">Save as TODO</button><button id="pop-send" type="button">Send</button></div></div>
     </div>
     <div class="pop-resize left" title="Drag to resize; double-click to reset"></div>
     <div class="pop-resize right" title="Drag to resize; double-click to reset"></div>
