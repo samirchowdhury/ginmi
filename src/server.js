@@ -97,7 +97,7 @@ async function route(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
 
   const body = await readBody(req);
-  if (resource === "threads" && !tid) return json(res, 200, { thread: await rt.createThread(body.anchor, body.question) });
+  if (resource === "threads" && !tid) return json(res, 200, { thread: await rt.createThread(body.anchor, body.question, { todo: body.todo }) });
   if (resource === "threads" && action === "messages") {
     await rt.followUp(tid, body.text);
     return json(res, 200, { ok: true });

@@ -258,22 +258,32 @@ export class Runtime {
     }
   }
 
-  async createThread(anchor, question) {
-    await this.baseReady;
-    const tid = randomUUID().slice(0, 8);
-    const full = { ...anchor, thread: tid, question, created: new Date().toISOString() };
-    this.#seed(tid);
-    writeFileSync(join(this.p.threads, `${tid}.anchor.json`), JSON.stringify(full, null, 2));
-    this.threads.set(tid, { anchor: full, proc: null, status: "idle", run: null });
-    this.#broadcast({ type: "thread_created", thread: this.#threadView(tid) });
-    this.#telemetry("question", { thread: tid, item: anchor.item, anchor_kind: anchor.kind, quote: anchor.quote ?? anchor.label, question, follow_up: false });
+  // The first prompt of a thread carries its anchor so the answering agent knows what is being asked about.
+  #anchoredPrompt(anchor, question) {
     const where =
       anchor.kind === "diagram"
         ? `Anchor: item ${anchor.item}, diagram node "${anchor.label}" (id ${anchor.node}).`
         : anchor.kind === "general"
           ? "Anchor: the review as a whole."
           : `Anchor: item ${anchor.item}${anchor.itemTitle ? ` ("${anchor.itemTitle}")` : ""}, selected text:\n> ${anchor.quote.replace(/\n/g, "\n> ")}`;
-    await this.#prompt(tid, `${where}\n\nQuestion: ${question}`, question);
+    return `${where}\n\nQuestion: ${question}`;
+  }
+
+  // With `todo`, the thread is created holding only that TODO and the model is not asked anything.
+  async createThread(anchor, question, { todo } = {}) {
+    await this.baseReady;
+    const tid = randomUUID().slice(0, 8);
+    const full = { ...anchor, thread: tid, question: question ?? null, created: new Date().toISOString() };
+    this.#seed(tid);
+    writeFileSync(join(this.p.threads, `${tid}.anchor.json`), JSON.stringify(full, null, 2));
+    this.threads.set(tid, { anchor: full, proc: null, status: "idle", run: null });
+    this.#broadcast({ type: "thread_created", thread: this.#threadView(tid) });
+    if (todo) {
+      this.addTodo(tid, todo);
+      return tid;
+    }
+    this.#telemetry("question", { thread: tid, item: anchor.item, anchor_kind: anchor.kind, quote: anchor.quote ?? anchor.label, question, follow_up: false });
+    await this.#prompt(tid, this.#anchoredPrompt(full, question), question);
     return tid;
   }
 
@@ -281,6 +291,13 @@ export class Runtime {
     const t = this.threads.get(tid);
     if (!t) throw new Error(`No thread ${tid}`);
     if (t.status === "running") throw new Error("Thread is still answering");
+    // A thread started as a TODO has not asked anything yet: this is its first, anchored question.
+    if (!t.anchor.question) {
+      t.anchor.question = text;
+      writeFileSync(join(this.p.threads, `${tid}.anchor.json`), JSON.stringify(t.anchor, null, 2));
+      this.#telemetry("question", { thread: tid, item: t.anchor.item, anchor_kind: t.anchor.kind, quote: t.anchor.quote ?? t.anchor.label, question: text, follow_up: false });
+      return this.#prompt(tid, this.#anchoredPrompt(t.anchor, text), text);
+    }
     this.#telemetry("question", { thread: tid, item: t.anchor.item, question: text, follow_up: true });
     await this.#prompt(tid, text, text);
   }

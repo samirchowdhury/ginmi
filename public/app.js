@@ -384,7 +384,6 @@ function renderPopFoot() {
   const foot = $("#margin-pop .pop-foot");
   const input = $("#pop-input");
   foot.hidden = !t && !draft;
-  $("#pop-todo").hidden = !!draft;
   if (draft) {
     input.disabled = $("#pop-send").disabled = false;
     input.placeholder = "Ask a question about this… (⌘↵)";
@@ -434,8 +433,10 @@ $("#pop-send").addEventListener("click", sendFromPop);
 $("#pop-todo").addEventListener("click", async () => {
   const t = popTarget();
   const text = $("#pop-input").value.trim();
-  if (!t || !text || draft) return;
-  await post(`threads/${t.id}/todos`, { text });
+  if (!text || (!t && !draft)) return;
+  // From a draft, this creates the thread holding just the TODO, without asking the model.
+  if (draft) await post("threads", { anchor: draft.anchor, todo: text });
+  else await post(`threads/${t.id}/todos`, { text });
   $("#pop-input").value = "";
   autosizeInput();
   const cards = $("#margin-pop .pop-cards");
@@ -539,7 +540,7 @@ function renderDraft() {
     "div",
     { class: "thread active draft" },
     el("div", { class: "thread-head", title: where }, el("span", {}, anchor.item === "general" ? "General" : `Item ${anchor.item}`), el("span", { class: "quote" }, where)),
-    el("div", { class: "thread-body" }, el("p", { class: "hint" }, "New question. Type it below and press ⌘↵ to send.")),
+    el("div", { class: "thread-body" }, el("p", { class: "hint" }, "Ask a question below (⌘↵), or save it as a TODO for the handoff.")),
   );
   $("#margin-pop .pop-cards").append(card);
   openAnchorEl = draft.anchorEl;
